@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * a human-readable title, explanation, and recommended action that a
  * non-technical WordPress site owner can understand and act on.
  */
-class MR_Plain_Language {
+class Malroot_Plain_Language {
 
 	/**
 	 * Returns a plain-language card for a finding row.

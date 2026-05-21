@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * This is what catches the system-control/v1 namespace that the rogue
  * plugin used to expose full RCE on allfirstnations.com.au.
  */
-class MR_Scanner_REST extends MR_Scanner_Base {
+class Malroot_Scanner_REST extends Malroot_Scanner_Base {
 
 	protected $module = 'rest';
 

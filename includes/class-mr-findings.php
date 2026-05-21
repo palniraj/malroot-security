@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 /**
  * Lightweight data layer for findings.
  */
-class MR_Findings {
+class Malroot_Findings {
 
 	public static function table() {
 		global $wpdb;

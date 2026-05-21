@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *
  * Every action is reversible via restore().
  */
-class MR_Quarantine {
+class Malroot_Quarantine {
 
 	const STATUS_OPEN     = 'open';
 	const STATUS_QUARANT  = 'quarantined';
@@ -101,7 +101,7 @@ class MR_Quarantine {
 			[ '%s' ],
 			[ '%d' ]
 		);
-		MR_Logger::info( 'Quarantined finding', [ 'finding_id' => $finding_id, 'type' => $type, 'target' => $target ] );
+		Malroot_Logger::info( 'Quarantined finding', [ 'finding_id' => $finding_id, 'type' => $type, 'target' => $target ] );
 		return true;
 	}
 

@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * The scan is split into one AJAX call per scanner module so the browser
  * can show a live progress bar without the page timing out.
  */
-class MR_Ajax {
+class Malroot_Ajax {
 
 	public static function register() {
 		$actions = [
@@ -42,14 +42,14 @@ class MR_Ajax {
 		@set_time_limit( 120 );
 
 		$map = [
-			'files'     => 'MR_Scanner_Files',
-			'database'  => 'MR_Scanner_Database',
-			'users'     => 'MR_Scanner_Users',
-			'triggers'  => 'MR_Scanner_Triggers',
-			'rest'      => 'MR_Scanner_REST',
-			'muplugins' => 'MR_Scanner_MuPlugins',
-			'botcloak'  => 'MR_Scanner_BotCloak',
-			'integrity' => 'MR_Scanner_Integrity',
+			'files'     => 'Malroot_Scanner_Files',
+			'database'  => 'Malroot_Scanner_Database',
+			'users'     => 'Malroot_Scanner_Users',
+			'triggers'  => 'Malroot_Scanner_Triggers',
+			'rest'      => 'Malroot_Scanner_REST',
+			'muplugins' => 'Malroot_Scanner_MuPlugins',
+			'botcloak'  => 'Malroot_Scanner_BotCloak',
+			'integrity' => 'Malroot_Scanner_Integrity',
 		];
 
 		if ( ! isset( $map[ $step ] ) ) {
@@ -63,7 +63,7 @@ class MR_Ajax {
 			$scanner->run();
 		} catch ( Throwable $e ) {
 			// Don't abort the whole scan for one module failure
-			MR_Logger::error( 'Scanner step failed: ' . $step, [ 'error' => $e->getMessage() ] );
+			Malroot_Logger::error( 'Scanner step failed: ' . $step, [ 'error' => $e->getMessage() ] );
 		}
 
 		wp_send_json_success( [ 'scan_id' => $scan_id, 'step' => $step ] );
@@ -89,18 +89,18 @@ class MR_Ajax {
 		// Auto-quarantine critical findings if enabled
 		$settings = (array) get_option( 'malroot_settings', [] );
 		if ( ! empty( $settings['auto_quarantine_critical'] ) ) {
-			foreach ( MR_Findings::get_by_scan( $scan_id ) as $f ) {
+			foreach ( Malroot_Findings::get_by_scan( $scan_id ) as $f ) {
 				if ( $f->severity === 'critical' && $f->status === 'open' ) {
-					MR_Quarantine::quarantine_finding( $f->id );
+					Malroot_Quarantine::quarantine_finding( $f->id );
 				}
 			}
 		}
 
-		MR_Alerting::alert_after_scan( $scan_id );
+		Malroot_Alerting::alert_after_scan( $scan_id );
 
-		$findings = MR_Findings::get_by_scan( $scan_id );
-		$counts   = MR_Findings::counts_by_severity( $scan_id );
-		$score    = MR_Findings::security_score( $scan_id );
+		$findings = Malroot_Findings::get_by_scan( $scan_id );
+		$counts   = Malroot_Findings::counts_by_severity( $scan_id );
+		$score    = Malroot_Findings::security_score( $scan_id );
 
 		// Serialise findings for JS
 		$out = [];
@@ -136,7 +136,7 @@ class MR_Ajax {
 		}
 		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
-		$count = MR_Baseline::rebuild();
+		$count = Malroot_Baseline::rebuild();
 		wp_send_json_success( [ 'count' => $count ] );
 	}
 
@@ -151,7 +151,7 @@ class MR_Ajax {
 		}
 
 		$id     = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
-		$result = MR_Quarantine::quarantine_finding( $id );
+		$result = Malroot_Quarantine::quarantine_finding( $id );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( $result->get_error_message() );

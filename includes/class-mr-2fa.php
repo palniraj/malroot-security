@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *     administrator. They can still log in once to set it up, but until they do
  *     they can't access any other admin page.
  */
-class MR_TwoFactor {
+class Malroot_TwoFactor {
 
 	const META_SECRET   = 'malroot_2fa_secret';
 	const META_ENABLED  = 'malroot_2fa_enabled';
@@ -108,7 +108,7 @@ class MR_TwoFactor {
 		$codes   = $pending['recovery'];
 		$account = $user->user_login . '@' . wp_parse_url( home_url(), PHP_URL_HOST );
 		$issuer  = get_bloginfo( 'name' );
-		$url     = MR_TOTP::otpauth_url( $secret, $account, $issuer );
+		$url     = Malroot_TOTP::otpauth_url( $secret, $account, $issuer );
 		$qr_src  = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . rawurlencode( $url );
 
 		// The verify form MUST be outside the WP profile <form>.
@@ -192,7 +192,7 @@ class MR_TwoFactor {
 				exit;
 			}
 			$code = sanitize_text_field( wp_unslash( $_POST['code'] ?? '' ) );
-			if ( ! MR_TOTP::verify( $pending['secret'], $code ) ) {
+			if ( ! Malroot_TOTP::verify( $pending['secret'], $code ) ) {
 				wp_safe_redirect( add_query_arg( 'mr_2fa_error', urlencode( 'Invalid code. Make sure your phone clock is correct.' ), self::profile_url( $user_id ) . '#malroot-2fa' ) );
 				exit;
 			}
@@ -201,7 +201,7 @@ class MR_TwoFactor {
 			update_user_meta( $user_id, self::META_ENABLED, 1 );
 			delete_transient( self::TRANSIENT_PREFIX . $user_id );
 
-			MR_Alerting::alert( 'medium', '2fa_enabled',
+			Malroot_Alerting::alert( 'medium', '2fa_enabled',
 				"User '" . wp_get_current_user()->user_login . "' enabled 2FA",
 				[ 'user_id' => $user_id ]
 			);
@@ -211,7 +211,7 @@ class MR_TwoFactor {
 		}
 
 		// Step 1: generate secret + recovery codes
-		$secret   = MR_TOTP::generate_secret();
+		$secret   = Malroot_TOTP::generate_secret();
 		$recovery = self::generate_recovery_codes();
 		set_transient( self::TRANSIENT_PREFIX . $user_id, [
 			'secret'   => $secret,
@@ -231,7 +231,7 @@ class MR_TwoFactor {
 		delete_user_meta( $user_id, self::META_RECOVERY );
 		delete_user_meta( $user_id, self::META_ENABLED );
 
-		MR_Alerting::alert( 'high', '2fa_disabled',
+		Malroot_Alerting::alert( 'high', '2fa_disabled',
 			"User ID {$user_id} had 2FA disabled by " . wp_get_current_user()->user_login,
 			[ 'user_id' => $user_id ]
 		);
@@ -389,7 +389,7 @@ class MR_TwoFactor {
 		$secret = get_user_meta( $user_obj->ID, self::META_SECRET, true );
 
 		// 1) TOTP code
-		if ( $secret && MR_TOTP::verify( $secret, $code ) ) {
+		if ( $secret && Malroot_TOTP::verify( $secret, $code ) ) {
 			self::complete_login( $user_obj, $token );
 			return;
 		}
@@ -400,7 +400,7 @@ class MR_TwoFactor {
 		if ( $recovery && in_array( $upper, $recovery, true ) ) {
 			$recovery = array_values( array_diff( $recovery, [ $upper ] ) );
 			update_user_meta( $user_obj->ID, self::META_RECOVERY, $recovery );
-			MR_Alerting::alert( 'medium', '2fa_recovery_used',
+			Malroot_Alerting::alert( 'medium', '2fa_recovery_used',
 				"Recovery code used by '{$user_obj->user_login}'",
 				[ 'user_id' => $user_obj->ID, 'remaining' => count( $recovery ) ]
 			);
@@ -408,7 +408,7 @@ class MR_TwoFactor {
 			return;
 		}
 
-		MR_Alerting::alert( 'high', '2fa_failed',
+		Malroot_Alerting::alert( 'high', '2fa_failed',
 			"Failed 2FA attempt for '{$user_obj->user_login}'",
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 			[ 'user_id' => $user_obj->ID, 'ip' => isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' ]

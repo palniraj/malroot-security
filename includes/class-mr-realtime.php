@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * - Scans option values for known malware patterns before they save
  * - Logs every outbound HTTP request via the WP HTTP API
  */
-class MR_Realtime {
+class Malroot_Realtime {
 
 	private static $blocked_logins = [
 		'newsfeed', 'system_control', 'system-control', 'wpadmin',
@@ -97,7 +97,7 @@ class MR_Realtime {
 			(array) get_option( 'malroot_blocked_logins', [] )
 		);
 		if ( in_array( strtolower( (string) $login ), array_map( 'strtolower', $blocked ), true ) ) {
-			MR_Alerting::alert( 'critical', 'blocked_user_creation',
+			Malroot_Alerting::alert( 'critical', 'blocked_user_creation',
 				"Refused to create user with malware-associated login '{$login}'",
 				[ 'attempted_login' => $login, 'ip' => self::ip() ]
 			);
@@ -131,7 +131,7 @@ class MR_Realtime {
 			'admin_session' => is_user_logged_in() && current_user_can( 'manage_options' ),
 		];
 		$severity = $context['admin_session'] ? 'medium' : 'critical';
-		MR_Alerting::alert(
+		Malroot_Alerting::alert(
 			$severity,
 			'new_administrator',
 			"New administrator '{$u->user_login}' created",
@@ -144,7 +144,7 @@ class MR_Realtime {
 		if ( ! $u ) return;
 		// Catch users registered via REST API specifically
 		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
-			MR_Alerting::alert(
+			Malroot_Alerting::alert(
 				'high',
 				'rest_user_register',
 				"User '{$u->user_login}' was created via REST API",
@@ -172,7 +172,7 @@ class MR_Realtime {
 		}
 		foreach ( self::$option_signatures as $regex => $label ) {
 			if ( preg_match( $regex, $haystack ) ) {
-				MR_Alerting::alert(
+				Malroot_Alerting::alert(
 					'critical',
 					'option_payload_blocked',
 					"Refused to save option '{$option}' containing malware pattern: {$label}",
@@ -284,7 +284,7 @@ class MR_Realtime {
 			$bad = [ 'superfuckingpanel.info', 'hihatbar.com', 'logsmetrics.com', 'host-stats.io', 'jforvexan.shop', 'talvexoni.shop', 'ak2yy.com' ];
 			foreach ( $bad as $b ) {
 				if ( $host === $b || substr( $host, -strlen( $b ) - 1 ) === '.' . $b ) {
-					MR_Alerting::alert(
+					Malroot_Alerting::alert(
 						'critical',
 						'outbound_to_c2',
 						"Outbound HTTP request to known malicious domain {$host}",

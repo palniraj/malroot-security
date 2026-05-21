@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * unauthenticated upload forms, hidden dot-directories with PHP, and leaked
  * wp-config copies — i.e. the file-side IoCs from the allfirstnations attack.
  */
-class MR_Scanner_Files extends MR_Scanner_Base {
+class Malroot_Scanner_Files extends Malroot_Scanner_Base {
 
 	protected $module = 'files';
 

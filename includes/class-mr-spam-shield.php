@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *  - Email domain blocklist.
  *  - Bulk cleanup tool (admin page) to delete subscribers matching patterns.
  */
-class MR_Spam_Shield {
+class Malroot_Spam_Shield {
 
 	const HONEYPOT_FIELD = 'mr_hp_email_confirm';
 
@@ -55,7 +55,7 @@ class MR_Spam_Shield {
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( ! empty( $_POST[ self::HONEYPOT_FIELD ] ) ) {
 			$errors->add( 'mr_spam', __( 'Registration failed.', 'malroot-security' ) );
-			MR_Alerting::alert( 'medium', 'spam_honeypot', 'Honeypot tripped on registration', [
+			Malroot_Alerting::alert( 'medium', 'spam_honeypot', 'Honeypot tripped on registration', [
 				'attempted_login' => $sanitized_user_login,
 				'attempted_email' => $user_email,
 				'ip'              => self::ip(),

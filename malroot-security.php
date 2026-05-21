@@ -52,7 +52,7 @@ require_once MALROOT_DIR . 'includes/class-mr-2fa.php';
 require_once MALROOT_DIR . 'includes/class-mr-ajax.php';
 require_once MALROOT_DIR . 'includes/admin/class-mr-admin.php';
 
-register_activation_hook( __FILE__, [ 'MR_Loader', 'activate' ] );
-register_deactivation_hook( __FILE__, [ 'MR_Loader', 'deactivate' ] );
+register_activation_hook( __FILE__, [ 'Malroot_Loader', 'activate' ] );
+register_deactivation_hook( __FILE__, [ 'Malroot_Loader', 'deactivate' ] );
 
-add_action( 'plugins_loaded', [ 'MR_Loader', 'init' ] );
+add_action( 'plugins_loaded', [ 'Malroot_Loader', 'init' ] );

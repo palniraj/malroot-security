@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *
  * Used by the Simple View to decide whether to offer "Accept" or "Quarantine".
  */
-class MR_Verifier {
+class Malroot_Verifier {
 
 	const VERDICT_SAFE      = 'safe';
 	const VERDICT_PROBABLY  = 'probably';

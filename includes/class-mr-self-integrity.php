@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * If an attacker tampers with Malroot's own code (e.g. to disable scanners),
  * the manifest mismatch is shown loudly in admin and an alert is fired.
  */
-class MR_Self_Integrity {
+class Malroot_Self_Integrity {
 
 	const MANIFEST_OPTION = 'malroot_self_manifest';
 

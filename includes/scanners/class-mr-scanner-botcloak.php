@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * that the human version doesn't, which is the textbook bot-cloak SEO
  * spam pattern (system-control's SC_Display_Links did this).
  */
-class MR_Scanner_BotCloak extends MR_Scanner_Base {
+class Malroot_Scanner_BotCloak extends Malroot_Scanner_Base {
 
 	protected $module = 'botcloak';
 
@@ -24,7 +24,7 @@ class MR_Scanner_BotCloak extends MR_Scanner_Base {
 		$human = $this->fetch( $home, $this->human_ua );
 
 		if ( ! $bot || ! $human ) {
-			MR_Logger::warning( 'BotCloak: fetch failed; skipping diff' );
+			Malroot_Logger::warning( 'BotCloak: fetch failed; skipping diff' );
 			return;
 		}
 

@@ -8,13 +8,13 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * baseline and emit findings for new/modified/deleted PHP, JS and
  * .htaccess files.
  */
-class MR_Scanner_Integrity extends MR_Scanner_Base {
+class Malroot_Scanner_Integrity extends Malroot_Scanner_Base {
 
 	protected $module = 'integrity';
 
 	public function run() {
-		if ( ! MR_Baseline::exists() ) {
-			$count = MR_Baseline::rebuild();
+		if ( ! Malroot_Baseline::exists() ) {
+			$count = Malroot_Baseline::rebuild();
 			$this->record(
 				'INT-INIT',
 				'info',
@@ -26,22 +26,22 @@ class MR_Scanner_Integrity extends MR_Scanner_Base {
 			return;
 		}
 
-		$diff = MR_Baseline::diff();
+		$diff = Malroot_Baseline::diff();
 
 		// New files: auto-accept anything that's verified-safe (matches WordPress.org or plugin checksum)
 		foreach ( array_slice( $diff['new'], 0, 500 ) as $rel ) {
 			// Skip Malroot's own files — they change on every plugin update
 			if ( strpos( $rel, 'wp-content/plugins/malroot-security/' ) !== false ) {
-				MR_Baseline::add_to_baseline( $rel );
+				Malroot_Baseline::add_to_baseline( $rel );
 				continue;
 			}
 			// Verify the file. If it matches an official checksum, silently update the baseline.
-			$verdict = MR_Verifier::verify( $rel );
-			if ( $verdict['verdict'] === MR_Verifier::VERDICT_SAFE ) {
-				MR_Baseline::add_to_baseline( $rel );
+			$verdict = Malroot_Verifier::verify( $rel );
+			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_SAFE ) {
+				Malroot_Baseline::add_to_baseline( $rel );
 				continue; // No finding — this is a legitimate update
 			}
-			if ( $verdict['verdict'] === MR_Verifier::VERDICT_MALICIOUS ) {
+			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_MALICIOUS ) {
 				$this->record( 'INT-NEW', 'critical', $rel, $verdict['reason'], $verdict['evidence'] );
 				continue;
 			}
@@ -56,15 +56,15 @@ class MR_Scanner_Integrity extends MR_Scanner_Base {
 		// Modified files: same auto-accept logic
 		foreach ( array_slice( $diff['modified'], 0, 500 ) as $rel ) {
 			if ( strpos( $rel, 'wp-content/plugins/malroot-security/' ) !== false ) {
-				MR_Baseline::add_to_baseline( $rel );
+				Malroot_Baseline::add_to_baseline( $rel );
 				continue;
 			}
-			$verdict = MR_Verifier::verify( $rel );
-			if ( $verdict['verdict'] === MR_Verifier::VERDICT_SAFE ) {
-				MR_Baseline::add_to_baseline( $rel );
+			$verdict = Malroot_Verifier::verify( $rel );
+			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_SAFE ) {
+				Malroot_Baseline::add_to_baseline( $rel );
 				continue;
 			}
-			if ( $verdict['verdict'] === MR_Verifier::VERDICT_MALICIOUS ) {
+			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_MALICIOUS ) {
 				$this->record( 'INT-MOD', 'critical', $rel, $verdict['reason'], $verdict['evidence'] );
 				continue;
 			}
@@ -82,7 +82,7 @@ class MR_Scanner_Integrity extends MR_Scanner_Base {
 		// Deleted files: low severity (legitimate plugin uninstalls are common)
 		foreach ( array_slice( $diff['deleted'], 0, 500 ) as $rel ) {
 			if ( strpos( $rel, 'wp-content/plugins/malroot-security/' ) !== false ) {
-				MR_Baseline::remove_from_baseline( $rel );
+				Malroot_Baseline::remove_from_baseline( $rel );
 				continue;
 			}
 			$this->record( 'INT-DEL', 'low', $rel, 'File deleted since last baseline', '' );

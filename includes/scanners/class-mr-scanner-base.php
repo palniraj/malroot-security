@@ -1,7 +1,7 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-abstract class MR_Scanner_Base {
+abstract class Malroot_Scanner_Base {
 
 	protected $scan_id = 0;
 	protected $module  = 'base';
@@ -13,7 +13,7 @@ abstract class MR_Scanner_Base {
 	abstract public function run();
 
 	protected function record( $rule_id, $severity, $target, $summary, $details = '' ) {
-		MR_Findings::record( [
+		Malroot_Findings::record( [
 			'scan_id'  => $this->scan_id,
 			'module'   => $this->module,
 			'rule_id'  => $rule_id,

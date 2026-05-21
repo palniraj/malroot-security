@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * Critical alerts go out instantly. Lower severities are batched into a
  * daily digest (handled by the scheduled scan path).
  */
-class MR_Alerting {
+class Malroot_Alerting {
 
 	public static function table() {
 		global $wpdb;
@@ -44,7 +44,7 @@ class MR_Alerting {
 			],
 			[ '%s', '%s', '%s', '%s', '%s' ]
 		);
-		MR_Logger::warning( 'Alert: ' . $summary, $context );
+		Malroot_Logger::warning( 'Alert: ' . $summary, $context );
 
 		// Critical and HIGH alerts dispatch immediately, but only if not a duplicate
 		if ( in_array( $severity, [ 'critical', 'high' ], true ) && (int) $recent === 0 ) {
@@ -56,14 +56,14 @@ class MR_Alerting {
 	 * Send digest after a scan completes.
 	 */
 	public static function alert_after_scan( $scan_id ) {
-		$counts = MR_Findings::counts_by_severity( $scan_id );
+		$counts = Malroot_Findings::counts_by_severity( $scan_id );
 		$bad    = $counts['critical'] + $counts['high'];
 		if ( $bad === 0 ) {
 			return;
 		}
 
 		// Build a fingerprint of the current findings so we can compare to last scan
-		$findings = MR_Findings::get_by_scan( $scan_id );
+		$findings = Malroot_Findings::get_by_scan( $scan_id );
 		$fingerprint_parts = [];
 		foreach ( $findings as $f ) {
 			if ( in_array( $f->severity, [ 'critical', 'high' ], true ) && $f->status === 'open' ) {
@@ -80,7 +80,7 @@ class MR_Alerting {
 		}
 		update_option( 'malroot_last_alert_fingerprint', $fingerprint, false );
 
-		$score   = MR_Findings::security_score( $scan_id );
+		$score   = Malroot_Findings::security_score( $scan_id );
 		$summary = sprintf(
    /* translators: %s is replaced with dynamic content */
 			__( 'Scan complete on %1$s — %2$d critical, %3$d high. Score %4$d/100.', 'malroot-security' ),

@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *
  * Anything that's not on the operator-supplied allowlist is flagged.
  */
-class MR_Scanner_MuPlugins extends MR_Scanner_Base {
+class Malroot_Scanner_MuPlugins extends Malroot_Scanner_Base {
 
 	protected $module = 'muplugins';
 

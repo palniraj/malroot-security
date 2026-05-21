@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * Free API (ipapi.co — no key, 1k/day per IP block, 30k/month free tier).
  * Results cached in wp_options for 30 days per IP.
  */
-class MR_GeoIP {
+class Malroot_GeoIP {
 
 	const CACHE_PREFIX = 'malroot_geo_';
 	const CACHE_TTL    = 30 * DAY_IN_SECONDS;

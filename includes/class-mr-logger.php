@@ -1,7 +1,7 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-class MR_Logger {
+class Malroot_Logger {
 
 	public static function info( $message, $context = [] ) {
 		self::write( 'INFO', $message, $context );

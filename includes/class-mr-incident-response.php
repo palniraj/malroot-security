@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *
  * Every step calls the quarantine layer, so each removal is reversible.
  */
-class MR_Incident_Response {
+class Malroot_Incident_Response {
 
 	public static function run( $confirm_token ) {
 		if ( $confirm_token !== self::token() ) {
@@ -37,13 +37,13 @@ class MR_Incident_Response {
 
 		$report['finished_at'] = current_time( 'mysql' );
 
-		MR_Alerting::alert(
+		Malroot_Alerting::alert(
 			'high',
 			'incident_response_run',
 			'One-click incident response executed',
 			$report
 		);
-		MR_Logger::info( 'Incident response complete', $report );
+		Malroot_Logger::info( 'Incident response complete', $report );
 
 		return $report;
 	}
@@ -70,7 +70,7 @@ class MR_Incident_Response {
 				|| preg_match( '/INSERT\s+INTO\s+`?[^`\s]*_usermeta`?/i', $body )
 				|| preg_match( '/(administrator|wp_capabilities|wp_user_level)/i', $body );
 			if ( ! $looks_bad ) continue;
-			$result = MR_Quarantine::quarantine_finding(
+			$result = Malroot_Quarantine::quarantine_finding(
 				self::synthesise_trigger_finding( $t->TRIGGER_NAME )
 			);
 			$dropped[] = [
@@ -118,7 +118,7 @@ class MR_Incident_Response {
 					continue;
 				}
 				$finding_id = self::synthesise_user_finding( $login, (int) $id );
-				$result = MR_Quarantine::quarantine_finding( $finding_id );
+				$result = Malroot_Quarantine::quarantine_finding( $finding_id );
 				$removed[] = [
 					'user'   => $login,
 					'id'     => (int) $id,
@@ -152,7 +152,7 @@ class MR_Incident_Response {
 		foreach ( $names as $name ) {
 			if ( get_option( $name, null ) !== null ) {
 				$finding_id = self::synthesise_option_finding( $name );
-				$res = MR_Quarantine::quarantine_finding( $finding_id );
+				$res = Malroot_Quarantine::quarantine_finding( $finding_id );
 				$removed[] = [ 'option' => $name, 'result' => is_wp_error( $res ) ? $res->get_error_message() : 'removed' ];
 			}
 		}
@@ -190,7 +190,7 @@ class MR_Incident_Response {
 			) );
 			if ( $count === 0 ) continue;
 			$finding_id = self::synthesise_postmeta_finding( $key );
-			$res = MR_Quarantine::quarantine_finding( $finding_id );
+			$res = Malroot_Quarantine::quarantine_finding( $finding_id );
 			$removed[] = [ 'meta_key' => $key, 'count' => $count, 'result' => is_wp_error( $res ) ? $res->get_error_message() : 'removed' ];
 		}
 		return $removed;

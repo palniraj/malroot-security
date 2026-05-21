@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * Stored in wp_malroot_logins. The data is the seed for our bot/abuse
  * heuristics over time.
  */
-class MR_Login_Security {
+class Malroot_Login_Security {
 
 	const TABLE      = 'malroot_logins';
 	const LOCKED_OPT = 'malroot_locked_ips';
@@ -64,7 +64,7 @@ class MR_Login_Security {
 		// Automated-tool login is always suspicious for an admin
 		if ( $user instanceof WP_User && in_array( 'administrator', (array) $user->roles, true ) ) {
 			if ( self::is_automated_ua( $ua ) ) {
-				MR_Alerting::alert(
+				Malroot_Alerting::alert(
 					'critical',
 					'admin_login_automated_ua',
 					"Administrator '{$user_login}' logged in with automated user-agent",
@@ -74,9 +74,9 @@ class MR_Login_Security {
 
 			// Geo / ASN delta check — alert when admin logs in from a new IP block
 			if ( self::is_new_login_origin( $user->ID, $ip ) ) {
-				$geo = MR_GeoIP::lookup( $ip );
+				$geo = Malroot_GeoIP::lookup( $ip );
 				$location = $geo ? trim( ( $geo['city'] ? $geo['city'] . ', ' : '' ) . $geo['country_name'] ) : 'unknown location';
-				MR_Alerting::alert(
+				Malroot_Alerting::alert(
 					'high',
 					'admin_login_new_origin',
 					"Administrator '{$user_login}' logged in from a new origin: {$location}",
@@ -95,7 +95,7 @@ class MR_Login_Security {
 
 		if ( $count >= $threshold ) {
 			self::lock_ip( $ip, 30 * MINUTE_IN_SECONDS );
-			MR_Alerting::alert(
+			Malroot_Alerting::alert(
 				'high',
 				'login_lockout',
 				"IP {$ip} locked for 30 min after {$count} failed logins",

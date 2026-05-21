@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * This is what catches the after_insert_comment trigger that recreated
  * the 'newsfeed' admin on every spam comment on allfirstnations.com.au.
  */
-class MR_Scanner_Triggers extends MR_Scanner_Base {
+class Malroot_Scanner_Triggers extends Malroot_Scanner_Base {
 
 	protected $module = 'triggers';
 

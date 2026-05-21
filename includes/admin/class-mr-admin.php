@@ -1,7 +1,7 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-class MR_Admin {
+class Malroot_Admin {
 
 	public static function register() {
 		add_action( 'admin_menu',                            [ __CLASS__, 'menu' ] );
@@ -88,7 +88,7 @@ class MR_Admin {
 		check_admin_referer( 'malroot_run_scan' );
 		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
-		MR_Loader::run_full_scan();
+		Malroot_Loader::run_full_scan();
 		wp_safe_redirect( admin_url( 'admin.php?page=malroot-security&scanned=1' ) );
 		exit;
 	}
@@ -97,7 +97,7 @@ class MR_Admin {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_quarantine' );
 		$id = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
-		$result = MR_Quarantine::quarantine_finding( $id );
+		$result = Malroot_Quarantine::quarantine_finding( $id );
 		$args = is_wp_error( $result ) ? [ 'mr_error' => urlencode( $result->get_error_message() ) ] : [ 'mr_quarantined' => 1 ];
 		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php?page=malroot-security' ) ) );
 		exit;
@@ -107,7 +107,7 @@ class MR_Admin {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_restore' );
 		$id = (int) ( isset( $_POST['quarantine_id'] ) ? sanitize_text_field( wp_unslash( $_POST['quarantine_id'] ) ) : 0 );
-		$result = MR_Quarantine::restore( $id );
+		$result = Malroot_Quarantine::restore( $id );
 		$args = is_wp_error( $result ) ? [ 'mr_error' => urlencode( $result->get_error_message() ) ] : [ 'mr_restored' => 1 ];
 		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php?page=malroot-quarantine' ) ) );
 		exit;
@@ -159,9 +159,9 @@ class MR_Admin {
 
 	public static function render_dashboard() {
 		$last     = (int) get_option( 'malroot_last_scan', 0 );
-		$findings = $last ? MR_Findings::get_by_scan( $last ) : [];
-		$counts   = MR_Findings::counts_by_severity( $last );
-		$score    = MR_Findings::security_score( $last );
+		$findings = $last ? Malroot_Findings::get_by_scan( $last ) : [];
+		$counts   = Malroot_Findings::counts_by_severity( $last );
+		$score    = Malroot_Findings::security_score( $last );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$view     = isset( $_GET['view'] ) && sanitize_key( wp_unslash( $_GET['view'] ) ) === 'expert' ? 'expert' : 'simple';
 		?>
@@ -290,12 +290,12 @@ class MR_Admin {
 		$malicious     = [];
 
 		foreach ( $integrity_findings as $f ) {
-			$v = MR_Verifier::verify( $f->target );
+			$v = Malroot_Verifier::verify( $f->target );
 			$f->_verdict = $v;
 			switch ( $v['verdict'] ) {
-				case MR_Verifier::VERDICT_SAFE:      $verified_safe[] = $f; break;
-				case MR_Verifier::VERDICT_PROBABLY:  $probably_safe[] = $f; break;
-				case MR_Verifier::VERDICT_MALICIOUS: $malicious[]     = $f; break;
+				case Malroot_Verifier::VERDICT_SAFE:      $verified_safe[] = $f; break;
+				case Malroot_Verifier::VERDICT_PROBABLY:  $probably_safe[] = $f; break;
+				case Malroot_Verifier::VERDICT_MALICIOUS: $malicious[]     = $f; break;
 				default:                             $unknown[]       = $f;
 			}
 		}
@@ -480,7 +480,7 @@ class MR_Admin {
 	}
 
 	private static function render_plain_card( $f ) {
-		$pl = MR_Plain_Language::translate( $f );
+		$pl = Malroot_Plain_Language::translate( $f );
 		$sev_colors = [
 			'critical' => '#dc3232',
 			'high'     => '#dc3232',
@@ -965,7 +965,7 @@ class MR_Admin {
 		check_admin_referer( 'malroot_run_incident' );
 
 		$token = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
-		$report = MR_Incident_Response::run( $token );
+		$report = Malroot_Incident_Response::run( $token );
 
 		if ( is_wp_error( $report ) ) {
 			$args = [ 'mr_error' => urlencode( $report->get_error_message() ) ];
@@ -982,7 +982,7 @@ class MR_Admin {
 		check_admin_referer( 'malroot_rebuild_baseline' );
 		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
-		$count = MR_Baseline::rebuild();
+		$count = Malroot_Baseline::rebuild();
 		wp_safe_redirect( add_query_arg(
 			[ 'mr_baseline_built' => $count ],
 			admin_url( 'admin.php?page=malroot-security' )
@@ -1046,7 +1046,7 @@ class MR_Admin {
 			[ '%d' ]
 		);
 
-		MR_Logger::info( 'User accepted integrity finding', [ 'finding_id' => $id, 'target' => $f->target ] );
+		Malroot_Logger::info( 'User accepted integrity finding', [ 'finding_id' => $id, 'target' => $f->target ] );
 
 		wp_safe_redirect( add_query_arg( [ 'mr_accepted' => 1 ], admin_url( 'admin.php?page=malroot-security' ) ) );
 		exit;
@@ -1069,7 +1069,7 @@ class MR_Admin {
 			[ '%s' ],
 			[ '%d' ]
 		);
-		MR_Logger::info( 'User ignored finding', [ 'finding_id' => $id ] );
+		Malroot_Logger::info( 'User ignored finding', [ 'finding_id' => $id ] );
 		wp_safe_redirect( add_query_arg( [ 'mr_ignored' => 1 ], admin_url( 'admin.php?page=malroot-security' ) ) );
 		exit;
 	}
@@ -1082,7 +1082,7 @@ class MR_Admin {
 		check_admin_referer( 'malroot_export_findings' );
 
 		$last     = (int) get_option( 'malroot_last_scan', 0 );
-		$findings = $last ? MR_Findings::get_by_scan( $last ) : [];
+		$findings = $last ? Malroot_Findings::get_by_scan( $last ) : [];
 
 		$site = sanitize_title( wp_parse_url( home_url(), PHP_URL_HOST ) );
 		$file = sprintf( 'malroot-findings-%s-%s.csv', $site, gmdate( 'Y-m-d' ) );
@@ -1121,7 +1121,7 @@ class MR_Admin {
 			exit;
 		}
 
-		$result = MR_Alerting::send_test_email( $to );
+		$result = Malroot_Alerting::send_test_email( $to );
 
 		if ( is_wp_error( $result ) ) {
 			wp_safe_redirect( add_query_arg( [
@@ -1138,7 +1138,7 @@ class MR_Admin {
 	public static function handle_spam_dryrun() {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_spam_dryrun' );
-		$result = MR_Spam_Shield::bulk_cleanup( true );
+		$result = Malroot_Spam_Shield::bulk_cleanup( true );
 		set_transient( 'malroot_spam_dryrun', $result, HOUR_IN_SECONDS );
 		wp_safe_redirect( admin_url( 'admin.php?page=malroot-spam&mr_spam_dryrun=1' ) );
 		exit;
@@ -1149,7 +1149,7 @@ class MR_Admin {
 		check_admin_referer( 'malroot_spam_delete' );
 		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
-		$result = MR_Spam_Shield::bulk_cleanup( false );
+		$result = Malroot_Spam_Shield::bulk_cleanup( false );
 		wp_safe_redirect( add_query_arg( [ 'mr_spam_deleted' => (int) $result['count'] ], admin_url( 'admin.php?page=malroot-spam' ) ) );
 		exit;
 	}
@@ -1177,8 +1177,8 @@ class MR_Admin {
 				</tr></thead>
 				<tbody>
 				<?php foreach ( $rows as $r ) :
-					$is_auto = MR_Login_Security::is_automated_ua( $r->ua );
-					$location = MR_GeoIP::label( $r->ip );
+					$is_auto = Malroot_Login_Security::is_automated_ua( $r->ua );
+					$location = Malroot_GeoIP::label( $r->ip );
 				?>
 					<tr>
 						<td><?php echo $r->success ? '<span style="color:#46b450">✓ OK</span>' : '<span style="color:#dc3232">✗ FAIL</span>'; ?></td>
@@ -1284,7 +1284,7 @@ class MR_Admin {
 				</ul>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:15px">
 					<input type="hidden" name="action" value="malroot_run_incident" />
-					<input type="hidden" name="token" value="<?php echo esc_attr( MR_Incident_Response::token() ); ?>" />
+					<input type="hidden" name="token" value="<?php echo esc_attr( Malroot_Incident_Response::token() ); ?>" />
 					<?php wp_nonce_field( 'malroot_run_incident' ); ?>
 					<button type="submit" class="button button-primary button-hero" style="background:#dc3232;border-color:#a00;text-shadow:none" onclick="return confirm('Run full incident response now? Every change is reversible from the Quarantine page.')">
 						<?php esc_html_e( 'Run Incident Response', 'malroot-security' ); ?>

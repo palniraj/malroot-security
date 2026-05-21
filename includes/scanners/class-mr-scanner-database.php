@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * Scans wp_options, wp_posts, wp_postmeta for malware-resident payloads.
  * Catches sc_* options, wpcode-style backdoors, and known C2 strings.
  */
-class MR_Scanner_Database extends MR_Scanner_Base {
+class Malroot_Scanner_Database extends Malroot_Scanner_Base {
 
 	protected $module = 'database';
 

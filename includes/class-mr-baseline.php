@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *  - Operator can choose to "approve" the current state at any time
  *    which rewrites the baseline.
  */
-class MR_Baseline {
+class Malroot_Baseline {
 
 	const TABLE = 'malroot_baseline';
 

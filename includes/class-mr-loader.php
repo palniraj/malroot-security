@@ -4,7 +4,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-class MR_Loader {
+class Malroot_Loader {
 
 	public static function activate() {
 		global $wpdb;
@@ -110,7 +110,7 @@ class MR_Loader {
 		}
 
 		// Build the self-integrity manifest so we can detect tampering
-		MR_Self_Integrity::build_manifest();
+		Malroot_Self_Integrity::build_manifest();
 
 		// Schedule daily scan
 		if ( ! wp_next_scheduled( 'malroot_daily_scan' ) ) {
@@ -123,17 +123,17 @@ class MR_Loader {
 	}
 
 	public static function init() {
-		MR_Realtime::register();
-		MR_Login_Security::register();
-		MR_Spam_Shield::register();
-		MR_Ajax::register();
-		MR_Self_Integrity::register();
-		MR_TwoFactor::register();
+		Malroot_Realtime::register();
+		Malroot_Login_Security::register();
+		Malroot_Spam_Shield::register();
+		Malroot_Ajax::register();
+		Malroot_Self_Integrity::register();
+		Malroot_TwoFactor::register();
 
 		add_action( 'malroot_daily_scan', [ __CLASS__, 'run_full_scan' ] );
 
 		if ( is_admin() ) {
-			MR_Admin::register();
+			Malroot_Admin::register();
 		}
 	}
 
@@ -142,17 +142,17 @@ class MR_Loader {
 	 */
 	public static function run_full_scan() {
 		$scan_id = time();
-		MR_Logger::info( 'Starting full scan', [ 'scan_id' => $scan_id ] );
+		Malroot_Logger::info( 'Starting full scan', [ 'scan_id' => $scan_id ] );
 
 		$scanners = [
-			new MR_Scanner_Files(),
-			new MR_Scanner_Database(),
-			new MR_Scanner_Users(),
-			new MR_Scanner_Triggers(),
-			new MR_Scanner_REST(),
-			new MR_Scanner_MuPlugins(),
-			new MR_Scanner_BotCloak(),
-			new MR_Scanner_Integrity(),
+			new Malroot_Scanner_Files(),
+			new Malroot_Scanner_Database(),
+			new Malroot_Scanner_Users(),
+			new Malroot_Scanner_Triggers(),
+			new Malroot_Scanner_REST(),
+			new Malroot_Scanner_MuPlugins(),
+			new Malroot_Scanner_BotCloak(),
+			new Malroot_Scanner_Integrity(),
 		];
 
 		foreach ( $scanners as $scanner ) {
@@ -160,7 +160,7 @@ class MR_Loader {
 				$scanner->set_scan_id( $scan_id );
 				$scanner->run();
 			} catch ( Throwable $e ) {
-				MR_Logger::error( 'Scanner failed: ' . get_class( $scanner ), [
+				Malroot_Logger::error( 'Scanner failed: ' . get_class( $scanner ), [
 					'error'   => $e->getMessage(),
 					'scan_id' => $scan_id,
 				] );
@@ -172,16 +172,16 @@ class MR_Loader {
 		// Auto-quarantine critical findings if the operator opted in
 		$settings = (array) get_option( 'malroot_settings', [] );
 		if ( ! empty( $settings['auto_quarantine_critical'] ) ) {
-			$findings = MR_Findings::get_by_scan( $scan_id );
+			$findings = Malroot_Findings::get_by_scan( $scan_id );
 			foreach ( $findings as $f ) {
 				if ( $f->severity === 'critical' && $f->status === 'open' ) {
-					MR_Quarantine::quarantine_finding( $f->id );
+					Malroot_Quarantine::quarantine_finding( $f->id );
 				}
 			}
 		}
 
 		// Alert if anything bad turned up
-		MR_Alerting::alert_after_scan( $scan_id );
+		Malroot_Alerting::alert_after_scan( $scan_id );
 
 		return $scan_id;
 	}

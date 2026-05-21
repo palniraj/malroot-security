@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *  - admin not in operator-supplied whitelist
  *  - users without a real email address
  */
-class MR_Scanner_Users extends MR_Scanner_Base {
+class Malroot_Scanner_Users extends Malroot_Scanner_Base {
 
 	protected $module = 'users';
 

@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  * Pure PHP, no external dependencies. Compatible with Google Authenticator,
  * Authy, 1Password, Microsoft Authenticator, and any other RFC 6238 client.
  */
-class MR_TOTP {
+class Malroot_TOTP {
 
 	const PERIOD = 30;     // seconds per code
 	const DIGITS = 6;      // 6-digit codes
