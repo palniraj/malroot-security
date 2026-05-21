@@ -1,0 +1,188 @@
+<?php
+/**
+ * Plugin bootstrapper. Creates DB tables on activation and wires admin pages.
+ */
+if ( ! defined( 'ABSPATH' ) ) { exit; }
+
+class MR_Loader {
+
+	public static function activate() {
+		global $wpdb;
+		$charset_collate = $wpdb->get_charset_collate();
+		$findings_table  = $wpdb->prefix . 'malroot_findings';
+
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+		dbDelta( "CREATE TABLE {$findings_table} (
+			id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			scan_id BIGINT UNSIGNED NOT NULL,
+			module VARCHAR(40) NOT NULL,
+			rule_id VARCHAR(20) NOT NULL,
+			severity ENUM('info','low','medium','high','critical') NOT NULL,
+			target VARCHAR(500) NOT NULL,
+			summary TEXT NOT NULL,
+			details LONGTEXT,
+			status ENUM('open','acknowledged','fixed','ignored') NOT NULL DEFAULT 'open',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			KEY idx_scan (scan_id),
+			KEY idx_severity (severity),
+			KEY idx_status (status)
+		) {$charset_collate};" );
+
+		$quarantine_table = $wpdb->prefix . 'malroot_quarantine';
+		dbDelta( "CREATE TABLE {$quarantine_table} (
+			id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			item_type VARCHAR(20) NOT NULL,
+			target VARCHAR(500) NOT NULL,
+			payload_json LONGTEXT NOT NULL,
+			status ENUM('quarantined','restored') NOT NULL DEFAULT 'quarantined',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			KEY idx_type (item_type),
+			KEY idx_status (status)
+		) {$charset_collate};" );
+
+		$conn_table = $wpdb->prefix . 'malroot_connections';
+		dbDelta( "CREATE TABLE {$conn_table} (
+			id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			domain VARCHAR(255) NOT NULL,
+			url TEXT NOT NULL,
+			method VARCHAR(10) NOT NULL DEFAULT 'GET',
+			caller VARCHAR(500),
+			first_seen DATETIME NOT NULL,
+			last_seen DATETIME NOT NULL,
+			hit_count INT UNSIGNED NOT NULL DEFAULT 1,
+			KEY idx_domain (domain),
+			KEY idx_last (last_seen)
+		) {$charset_collate};" );
+
+		$alert_table = $wpdb->prefix . 'malroot_alerts';
+		dbDelta( "CREATE TABLE {$alert_table} (
+			id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			event_type VARCHAR(50) NOT NULL,
+			severity ENUM('info','low','medium','high','critical') NOT NULL,
+			summary TEXT NOT NULL,
+			context LONGTEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			KEY idx_severity (severity),
+			KEY idx_created (created_at)
+		) {$charset_collate};" );
+
+		$logins_table = $wpdb->prefix . 'malroot_logins';
+		dbDelta( "CREATE TABLE {$logins_table} (
+			id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			attempted_login VARCHAR(60) NOT NULL,
+			ip VARCHAR(45) NOT NULL,
+			ua VARCHAR(500),
+			success TINYINT(1) NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			KEY idx_ip (ip),
+			KEY idx_login (attempted_login),
+			KEY idx_created (created_at)
+		) {$charset_collate};" );
+
+		$baseline_table = $wpdb->prefix . 'malroot_baseline';
+		dbDelta( "CREATE TABLE {$baseline_table} (
+			id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			path VARCHAR(500) NOT NULL,
+			sha CHAR(32) NOT NULL,
+			size BIGINT UNSIGNED NOT NULL,
+			last_seen DATETIME NOT NULL,
+			KEY idx_path (path(191))
+		) {$charset_collate};" );
+
+		// Default options
+		if ( ! get_option( 'malroot_admin_whitelist' ) ) {
+			update_option( 'malroot_admin_whitelist', [] );
+		}
+		if ( ! get_option( 'malroot_last_scan' ) ) {
+			update_option( 'malroot_last_scan', 0 );
+		}
+		if ( ! get_option( 'malroot_settings' ) ) {
+			update_option( 'malroot_settings', [
+				'realtime_block_admin'   => 1,
+				'realtime_scan_options'  => 1,
+				'auto_quarantine_critical' => 0,
+				'alert_email'            => get_option( 'admin_email' ),
+				'slack_webhook'          => '',
+				'scheduled_scans'        => 1,
+				'monitor_outbound'       => 1,
+			] );
+		}
+
+		// Build the self-integrity manifest so we can detect tampering
+		MR_Self_Integrity::build_manifest();
+
+		// Schedule daily scan
+		if ( ! wp_next_scheduled( 'malroot_daily_scan' ) ) {
+			wp_schedule_event( time() + 60, 'daily', 'malroot_daily_scan' );
+		}
+	}
+
+	public static function deactivate() {
+		wp_clear_scheduled_hook( 'malroot_daily_scan' );
+	}
+
+	public static function init() {
+		MR_Realtime::register();
+		MR_Login_Security::register();
+		MR_Spam_Shield::register();
+		MR_Ajax::register();
+		MR_Self_Integrity::register();
+		MR_TwoFactor::register();
+
+		add_action( 'malroot_daily_scan', [ __CLASS__, 'run_full_scan' ] );
+
+		if ( is_admin() ) {
+			MR_Admin::register();
+		}
+	}
+
+	/**
+	 * Run a full scan and return the scan ID.
+	 */
+	public static function run_full_scan() {
+		$scan_id = time();
+		MR_Logger::info( 'Starting full scan', [ 'scan_id' => $scan_id ] );
+
+		$scanners = [
+			new MR_Scanner_Files(),
+			new MR_Scanner_Database(),
+			new MR_Scanner_Users(),
+			new MR_Scanner_Triggers(),
+			new MR_Scanner_REST(),
+			new MR_Scanner_MuPlugins(),
+			new MR_Scanner_BotCloak(),
+			new MR_Scanner_Integrity(),
+		];
+
+		foreach ( $scanners as $scanner ) {
+			try {
+				$scanner->set_scan_id( $scan_id );
+				$scanner->run();
+			} catch ( Throwable $e ) {
+				MR_Logger::error( 'Scanner failed: ' . get_class( $scanner ), [
+					'error'   => $e->getMessage(),
+					'scan_id' => $scan_id,
+				] );
+			}
+		}
+
+		update_option( 'malroot_last_scan', $scan_id );
+
+		// Auto-quarantine critical findings if the operator opted in
+		$settings = (array) get_option( 'malroot_settings', [] );
+		if ( ! empty( $settings['auto_quarantine_critical'] ) ) {
+			$findings = MR_Findings::get_by_scan( $scan_id );
+			foreach ( $findings as $f ) {
+				if ( $f->severity === 'critical' && $f->status === 'open' ) {
+					MR_Quarantine::quarantine_finding( $f->id );
+				}
+			}
+		}
+
+		// Alert if anything bad turned up
+		MR_Alerting::alert_after_scan( $scan_id );
+
+		return $scan_id;
+	}
+}

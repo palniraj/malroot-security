@@ -1,0 +1,289 @@
+/* ============================================================
+   Malroot Security — Admin Styles v0.9.0
+   ============================================================ */
+
+/* ---- Base wrap ------------------------------------------- */
+.malroot-wrap { max-width: 1200px; }
+.malroot-wrap h1 { display:flex; align-items:center; gap:10px; }
+.malroot-wrap h1 .malroot-version {
+	font-size:13px; color:#888; font-weight:400; background:#f0f0f1;
+	padding:2px 8px; border-radius:10px; vertical-align:middle;
+}
+.malroot-tagline { color:#666; font-size:13px; margin:-8px 0 16px; }
+
+/* ---- Top action bar -------------------------------------- */
+.malroot-action-bar {
+	display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+	margin:0 0 20px; padding:14px 16px;
+	background:#fff; border:1px solid #e0e0e0; border-radius:6px;
+	box-shadow:0 1px 3px rgba(0,0,0,.05);
+}
+.malroot-action-bar .malroot-last-scan {
+	color:#888; font-size:12px; margin-left:4px;
+}
+.malroot-action-bar .malroot-view-toggle {
+	margin-left:auto; font-size:13px; color:#666;
+}
+.malroot-action-bar .malroot-view-toggle a { color:#2271b1; text-decoration:none; }
+.malroot-action-bar .malroot-view-toggle a.active { font-weight:700; color:#1d2327; }
+
+/* ---- Progress bar ---------------------------------------- */
+#malroot-progress-wrap {
+	display:none; margin:0 0 16px;
+	background:#fff; border:1px solid #e0e0e0; border-radius:6px;
+	padding:16px 20px; box-shadow:0 1px 3px rgba(0,0,0,.05);
+}
+#malroot-scan-status { font-size:13px; color:#555; margin-bottom:8px; }
+#malroot-progress-bar-bg {
+	background:#e8e8e8; border-radius:4px; height:6px; overflow:hidden;
+}
+#malroot-progress-bar-inner {
+	background:linear-gradient(90deg,#2271b1,#135e96);
+	height:6px; width:0; border-radius:4px; transition:width .4s ease;
+}
+
+/* ---- Score tiles ----------------------------------------- */
+.malroot-tiles {
+	display:grid;
+	grid-template-columns: 200px repeat(5, 1fr);
+	gap:12px; margin:0 0 20px;
+}
+@media (max-width:900px) {
+	.malroot-tiles { grid-template-columns: repeat(3,1fr); }
+}
+.malroot-tile {
+	background:#fff; border:1px solid #e0e0e0; border-radius:8px;
+	padding:16px 20px; box-shadow:0 1px 3px rgba(0,0,0,.05);
+	transition:box-shadow .15s;
+}
+.malroot-tile:hover { box-shadow:0 2px 8px rgba(0,0,0,.1); }
+.malroot-tile-label {
+	font-size:11px; text-transform:uppercase; letter-spacing:.6px;
+	color:#888; margin-bottom:6px; font-weight:600;
+}
+.malroot-tile-value {
+	font-size:38px; font-weight:700; line-height:1;
+}
+.malroot-tile-score .malroot-tile-value { font-size:52px; }
+
+/* ---- Clean notice ---------------------------------------- */
+.malroot-clean-notice {
+	display:flex; align-items:center; gap:12px;
+	border:1px solid #46b450; background:#ecf7ed;
+	padding:20px 24px; border-radius:8px;
+	font-size:15px; color:#1e4620; font-weight:500;
+}
+.malroot-clean-notice .dashicons {
+	color:#46b450; font-size:24px; flex-shrink:0;
+}
+
+/* ---- Severity badge -------------------------------------- */
+.mr-badge {
+	display:inline-block; padding:3px 10px; border-radius:3px;
+	font-size:11px; font-weight:700; text-transform:uppercase;
+	letter-spacing:.4px; line-height:1.4;
+	white-space:nowrap;
+}
+/* High contrast — explicit text colors so they're always readable */
+.mr-badge-critical { background:#dc3232 !important; color:#fff !important; }
+.mr-badge-high     { background:#dc3232 !important; color:#fff !important; }
+.mr-badge-medium   { background:#ffb900 !important; color:#1d2327 !important; }
+.mr-badge-low      { background:#888 !important; color:#fff !important; }
+.mr-badge-info     { background:#2271b1 !important; color:#fff !important; }
+.mr-badge-ok           { background:#46b450 !important; color:#fff !important; }
+.mr-badge-fail         { background:#dc3232 !important; color:#fff !important; }
+.mr-badge-quarantined  { background:#dc3232 !important; color:#fff !important; }
+.mr-badge-restored     { background:#46b450 !important; color:#fff !important; }
+.mr-badge-fixed        { background:#46b450 !important; color:#fff !important; }
+.mr-badge-ignored      { background:#bbb !important; color:#fff !important; }
+.mr-badge-post         { background:#2271b1 !important; color:#fff !important; }
+.mr-badge-get          { background:#888 !important; color:#fff !important; }
+
+/* ---- Findings table -------------------------------------- */
+.malroot-findings-table { margin-top:4px; border-radius:6px; overflow:hidden; }
+.malroot-findings-table th { background:#f6f7f7; font-size:12px; }
+.malroot-findings-table td { vertical-align:top; padding:10px 10px; }
+.malroot-findings-table tr:hover td { background:#fafafa; }
+.malroot-target {
+	font-size:11px; word-break:break-all; display:block;
+	max-width:280px; color:#555;
+}
+.malroot-details summary {
+	cursor:pointer; font-size:11px; color:#888; margin-top:4px;
+}
+.malroot-details pre {
+	font-size:11px; background:#f6f7f7; padding:8px; margin-top:4px;
+	max-height:160px; overflow:auto; white-space:pre-wrap;
+	word-break:break-all; border:1px solid #e0e0e0; border-radius:3px;
+}
+.malroot-fixed { color:#46b450; font-size:11px; font-weight:700; }
+
+/* ---- Plain-language cards -------------------------------- */
+.mr-card {
+	background:#fff; border:1px solid #e0e0e0; border-radius:8px;
+	padding:20px; margin-bottom:14px;
+	box-shadow:0 1px 3px rgba(0,0,0,.05);
+	border-left:4px solid #ccc;
+}
+.mr-card-critical, .mr-card-high { border-left-color:#dc3232; }
+.mr-card-medium { border-left-color:#ffb900; }
+.mr-card-low { border-left-color:#888; }
+.mr-card-info { border-left-color:#2271b1; }
+.mr-card-safe { border-left-color:#46b450; }
+.mr-card-header { display:flex; align-items:flex-start; gap:12px; }
+.mr-card-icon { font-size:26px; line-height:1; flex-shrink:0; margin-top:2px; }
+.mr-card-body { flex:1; }
+.mr-card-title { font-size:15px; font-weight:600; margin:0 0 8px; }
+.mr-card-what { font-size:13px; color:#444; line-height:1.6; margin:0 0 10px; }
+.mr-card-why {
+	background:#fff8e1; border:1px solid #ffe082; border-radius:4px;
+	padding:10px 12px; font-size:13px; color:#555; margin:0 0 12px;
+	line-height:1.5;
+}
+.mr-card-why strong { color:#1d2327; }
+.mr-card-action { font-size:13px; color:#555; margin:0 0 12px; }
+.mr-card-action strong { color:#1d2327; }
+.mr-card-footer { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.mr-card-tech {
+	margin-top:10px; font-size:11px; color:#999;
+	background:#f6f7f7; padding:6px 10px; border-radius:3px;
+}
+
+/* ---- Section headings ------------------------------------ */
+.mr-section-heading {
+	display:flex; align-items:center; gap:8px;
+	font-size:16px; font-weight:600; margin:24px 0 8px;
+}
+.mr-section-sub { font-size:13px; color:#666; margin:-4px 0 12px; }
+
+/* ---- Integrity banner ------------------------------------ */
+.mr-integrity-banner {
+	border:1px solid #2271b1; background:#f0f6fc;
+	border-radius:8px; padding:20px; margin-top:20px;
+}
+.mr-integrity-banner.safe {
+	border-color:#46b450; background:#ecf7ed;
+}
+.mr-integrity-banner-header {
+	display:flex; align-items:flex-start; gap:12px;
+}
+.mr-integrity-banner-icon { font-size:28px; line-height:1; }
+.mr-integrity-banner-body { flex:1; }
+.mr-integrity-banner-title {
+	font-size:15px; font-weight:600; margin:0 0 6px;
+}
+.mr-integrity-banner-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+
+/* ---- Data tables (Quarantine, Connections, Logins) ------- */
+.mr-data-table { border-radius:6px; overflow:hidden; }
+.mr-data-table th {
+	background:#f6f7f7; font-size:12px; text-transform:uppercase;
+	letter-spacing:.4px; color:#666; padding:10px 12px;
+}
+.mr-data-table td { padding:10px 12px; vertical-align:middle; }
+.mr-data-table tr:hover td { background:#fafafa; }
+.mr-data-table code {
+	background:#f0f0f1; padding:2px 6px; border-radius:3px;
+	font-size:11px; word-break:break-all;
+}
+.mr-truncate { max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+.mr-ua-truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; font-size:11px; color:#666; }
+
+/* ---- Login result indicators ----------------------------- */
+.mr-login-ok   { color:#46b450; font-weight:700; font-size:12px; }
+.mr-login-fail { color:#dc3232; font-weight:700; font-size:12px; }
+.mr-ua-auto {
+	display:inline-block; background:#dc3232; color:#fff;
+	font-size:9px; font-weight:700; padding:1px 5px;
+	border-radius:3px; margin-right:4px; text-transform:uppercase;
+}
+.mr-location { font-size:12px; white-space:nowrap; }
+
+/* ---- Alerts page ----------------------------------------- */
+.mr-alert-event {
+	display:inline-block; background:#f0f0f1; color:#555;
+	padding:2px 8px; border-radius:3px; font-size:11px;
+	font-family:monospace;
+}
+.mr-alert-event-label {
+	font-size:13px; font-weight:500; color:#1d2327;
+}
+
+/* ---- Incident report ------------------------------------- */
+.mr-ir-report {
+	background:#fff; border:1px solid #e0e0e0; border-radius:8px;
+	overflow:hidden; margin-top:16px;
+}
+.mr-ir-section { border-bottom:1px solid #f0f0f1; }
+.mr-ir-section:last-child { border-bottom:none; }
+.mr-ir-section-header {
+	display:flex; align-items:center; gap:8px;
+	padding:12px 16px; background:#f6f7f7;
+	font-size:13px; font-weight:600; text-transform:capitalize;
+}
+.mr-ir-items { padding:0 16px 8px; }
+.mr-ir-item {
+	display:flex; align-items:center; gap:10px;
+	padding:8px 0; border-bottom:1px solid #f6f7f7; font-size:13px;
+}
+.mr-ir-item:last-child { border-bottom:none; }
+.mr-ir-ok   { color:#46b450; font-weight:700; font-size:14px; }
+.mr-ir-skip { color:#bbb; font-size:14px; }
+.mr-ir-err  { color:#dc3232; font-weight:700; font-size:14px; }
+.mr-ir-label { font-weight:500; flex:1; }
+.mr-ir-result { color:#888; font-size:12px; }
+.mr-ir-meta { font-size:11px; color:#aaa; }
+.mr-ir-timestamp { font-size:11px; color:#aaa; padding:10px 16px; }
+
+/* ---- Settings -------------------------------------------- */
+.mr-settings-section {
+	background:#fff; border:1px solid #e0e0e0; border-radius:8px;
+	margin-bottom:16px; overflow:hidden;
+}
+.mr-settings-section-header {
+	padding:14px 20px; background:#f6f7f7;
+	border-bottom:1px solid #e0e0e0;
+	font-size:14px; font-weight:600; color:#1d2327;
+}
+.mr-settings-section .form-table { margin:0; }
+.mr-settings-section .form-table th {
+	padding:14px 20px; font-size:13px; width:220px;
+}
+.mr-settings-section .form-table td { padding:14px 20px; }
+
+/* ---- Quarantine page ------------------------------------- */
+.mr-quarantine-type {
+	display:inline-flex; align-items:center; gap:4px;
+	font-size:12px; font-weight:600; text-transform:uppercase;
+	letter-spacing:.4px;
+}
+.mr-quarantine-type-file    { color:#2271b1; }
+.mr-quarantine-type-user    { color:#dc3232; }
+.mr-quarantine-type-trigger { color:#d63638; }
+.mr-quarantine-type-option  { color:#996800; }
+
+/* ---- Spam cleanup ---------------------------------------- */
+.mr-spam-preview {
+	background:#fff; border:1px solid #e0e0e0; border-radius:8px;
+	overflow:hidden; margin-top:16px;
+}
+.mr-spam-preview-header {
+	padding:14px 20px; background:#fff8e1; border-bottom:1px solid #ffe082;
+	display:flex; align-items:center; justify-content:space-between;
+}
+.mr-spam-count { font-size:15px; font-weight:600; color:#1d2327; }
+.mr-spam-note { font-size:12px; color:#888; }
+
+/* ---- Buttons --------------------------------------------- */
+.mr-btn-danger {
+	background:#dc3232; border-color:#a00; color:#fff;
+	text-shadow:none; box-shadow:none;
+}
+.mr-btn-danger:hover { background:#b32d2e; border-color:#a00; color:#fff; }
+
+/* ---- Empty state ----------------------------------------- */
+.mr-empty {
+	text-align:center; padding:40px 20px; color:#888;
+	font-size:14px; background:#fff; border:1px solid #e0e0e0;
+	border-radius:6px;
+}
