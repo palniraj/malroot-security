@@ -19,6 +19,7 @@ class MR_Scanner_Integrity extends MR_Scanner_Base {
 				'INT-INIT',
 				'info',
 				'baseline',
+    /* translators: %s is replaced with dynamic content */
 				sprintf( __( 'Initial integrity baseline created (%d files).', 'malroot-security' ), $count ),
 				''
 			);

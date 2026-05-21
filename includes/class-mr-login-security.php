@@ -106,6 +106,7 @@ class MR_Login_Security {
 
 	private static function record( $login, $ip, $ua, $success ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert( self::table(), [
 			'attempted_login' => substr( (string) $login, 0, 60 ),
 			'ip'              => substr( $ip, 0, 45 ),
@@ -140,8 +141,11 @@ class MR_Login_Security {
 	private static function failures_in_window( $ip, $seconds ) {
 		global $wpdb;
 		$since = gmdate( 'Y-m-d H:i:s', time() - $seconds );
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 		return (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM " . self::table() . " WHERE ip = %s AND success = 0 AND created_at > %s",
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"SELECT COUNT(*) FROM {$table} WHERE ip = %s AND success = 0 AND created_at > %s",
 			$ip, $since
 		) );
 	}
@@ -187,11 +191,15 @@ class MR_Login_Security {
 		if ( ! $ip ) return false;
 		$prefix = self::ip_prefix( $ip );
 		$since  = gmdate( 'Y-m-d H:i:s', time() - 90 * DAY_IN_SECONDS );
+		$table  = self::table();
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$count = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM " . self::table() . "
-			 JOIN {$wpdb->users} u ON u.user_login = " . self::table() . ".attempted_login
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"SELECT COUNT(*) FROM {$table}
+			 JOIN {$wpdb->users} u ON u.user_login = {$table}.attempted_login
 			 WHERE u.ID = %d AND success = 1 AND ip LIKE %s AND created_at > %s",
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			$user_id,
 			$wpdb->esc_like( $prefix ) . '%',
 			$since
@@ -211,13 +219,20 @@ class MR_Login_Security {
 
 	private static function ip() {
 		if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 			$first = explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0];
-			return trim( $first );
+			return sanitize_text_field( wp_unslash( trim( $first ) ) );
 		}
-		return $_SERVER['HTTP_X_REAL_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
+		if ( ! empty( $_SERVER['HTTP_X_REAL_IP'] ) ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+			return sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_REAL_IP'] ) );
+		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
 	}
 
 	private static function ua() {
-		return $_SERVER['HTTP_USER_AGENT'] ?? '';
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		return isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 	}
 }

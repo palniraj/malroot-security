@@ -16,6 +16,7 @@ class MR_Scanner_Users extends MR_Scanner_Base {
 		global $wpdb;
 
 		// 1) Duplicate login names — should be impossible via WP UI.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$dupes = $wpdb->get_results(
 			"SELECT user_login, COUNT(*) AS c FROM {$wpdb->users} GROUP BY user_login HAVING c > 1"
 		);
@@ -32,6 +33,7 @@ class MR_Scanner_Users extends MR_Scanner_Base {
 		// 2) Hardcoded malware login names from known attacks.
 		$known_bad = [ 'newsfeed', 'system_control', 'wpadmin', 'wordpress_administrator', 'wp_admin', 'acfmain', 'defino' ];
 		foreach ( $known_bad as $bad ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT ID FROM {$wpdb->users} WHERE user_login = %s LIMIT 1", $bad ) );
 			if ( $id > 0 ) {
 				$this->record(

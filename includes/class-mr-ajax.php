@@ -31,13 +31,14 @@ class MR_Ajax {
 			wp_send_json_error( 'Forbidden' );
 		}
 
-		$step    = sanitize_key( $_POST['step'] ?? '' );
-		$scan_id = (int) ( $_POST['scan_id'] ?? 0 );
+		$step    = sanitize_key( wp_unslash( $_POST['step'] ?? '' ) );
+		$scan_id = (int) ( isset( $_POST['scan_id'] ) ? sanitize_text_field( wp_unslash( $_POST['scan_id'] ) ) : 0 );
 
 		if ( ! $scan_id ) {
 			$scan_id = time();
 		}
 
+		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 120 );
 
 		$map = [
@@ -78,7 +79,7 @@ class MR_Ajax {
 			wp_send_json_error( 'Forbidden' );
 		}
 
-		$scan_id = (int) ( $_POST['scan_id'] ?? 0 );
+		$scan_id = (int) ( isset( $_POST['scan_id'] ) ? sanitize_text_field( wp_unslash( $_POST['scan_id'] ) ) : 0 );
 		if ( ! $scan_id ) {
 			wp_send_json_error( 'No scan ID' );
 		}
@@ -133,6 +134,7 @@ class MR_Ajax {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_send_json_error( 'Forbidden' );
 		}
+		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
 		$count = MR_Baseline::rebuild();
 		wp_send_json_success( [ 'count' => $count ] );
@@ -148,7 +150,7 @@ class MR_Ajax {
 			wp_send_json_error( 'Forbidden' );
 		}
 
-		$id     = (int) ( $_POST['finding_id'] ?? 0 );
+		$id     = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
 		$result = MR_Quarantine::quarantine_finding( $id );
 
 		if ( is_wp_error( $result ) ) {

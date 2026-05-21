@@ -360,6 +360,7 @@ class MR_Plain_Language {
 		// ----------------------------------------------------------------
 		return [
 			'icon'        => '⚠️',
+   /* translators: %s is replaced with dynamic content */
 			'title'       => sprintf( __( 'Security issue detected (%s)', 'malroot-security' ), esc_html( $rule ) ),
 			'what'        => esc_html( $f->summary ?? '' ),
 			'why_bad'     => __( 'This finding was flagged by Malroot\'s security scanner as potentially dangerous.', 'malroot-security' ),

@@ -34,6 +34,7 @@ class MR_Verifier {
 		$mal = self::scan_for_malware( $abs );
 		if ( $mal ) {
 			return self::result( self::VERDICT_MALICIOUS,
+    /* translators: %s is replaced with dynamic content */
 				sprintf( __( 'File contains malware pattern: %s', 'malroot-security' ), $mal ),
 				$mal
 			);
@@ -54,6 +55,7 @@ class MR_Verifier {
 			$recent = self::was_plugin_updated_recently( $m[1] );
 			if ( $recent ) {
 				return self::result( self::VERDICT_PROBABLY,
+     /* translators: %s is replaced with dynamic content */
 					sprintf( __( 'Plugin "%s" was updated recently — change is likely from that update.', 'malroot-security' ), $m[1] )
 				);
 			}
@@ -64,6 +66,7 @@ class MR_Verifier {
 			$recent = self::was_theme_updated_recently( $m[1] );
 			if ( $recent ) {
 				return self::result( self::VERDICT_PROBABLY,
+     /* translators: %s is replaced with dynamic content */
 					sprintf( __( 'Theme "%s" was updated recently — change is likely from that update.', 'malroot-security' ), $m[1] )
 				);
 			}
@@ -203,12 +206,14 @@ class MR_Verifier {
 		$expected = (array) $checksums[ $path_in_plugin ];
 		if ( in_array( $file_md5, $expected, true ) ) {
 			return self::result( self::VERDICT_SAFE,
-				sprintf( __( 'Matches official %s plugin checksum (v%s).', 'malroot-security' ), $slug, $version ),
+    /* translators: %s is replaced with dynamic content */
+				sprintf( __( 'Matches official %1$s plugin checksum (v%2$s).', 'malroot-security' ), $slug, $version ),
 				$slug . '@' . $version
 			);
 		}
 		return self::result( self::VERDICT_MALICIOUS,
-			sprintf( __( 'Plugin %s file has been modified — does not match official v%s.', 'malroot-security' ), $slug, $version ),
+   /* translators: %s is replaced with dynamic content */
+			sprintf( __( 'Plugin %1$s file has been modified — does not match official v%2$s.', 'malroot-security' ), $slug, $version ),
 			'expected ' . implode( ',', $expected ) . ' got ' . $file_md5
 		);
 	}

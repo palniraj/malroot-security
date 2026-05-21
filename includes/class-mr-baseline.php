@@ -22,7 +22,9 @@ class MR_Baseline {
 
 	public static function exists() {
 		global $wpdb;
-		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . self::table() ) > 0;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" ) > 0;
 	}
 
 	/**
@@ -30,13 +32,16 @@ class MR_Baseline {
 	 */
 	public static function rebuild() {
 		global $wpdb;
-		$wpdb->query( "TRUNCATE TABLE " . self::table() );
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
+		$wpdb->query( "TRUNCATE TABLE {$table}" );
 
 		$count = 0;
 		foreach ( self::iterate_files() as $path ) {
 			$hash = @md5_file( $path );
 			if ( ! $hash ) continue;
 			$rel  = self::relpath( $path );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->insert( self::table(), [
 				'path'      => $rel,
 				'sha'       => $hash,
@@ -47,7 +52,7 @@ class MR_Baseline {
 		}
 		update_option( 'malroot_baseline_built', current_time( 'mysql' ), false );
 		// Mark any open integrity findings as fixed since we just accepted the current state
-		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( "UPDATE {$wpdb->prefix}malroot_findings SET status='fixed' WHERE module='integrity' AND status='open'" );
 		return $count;
 	}
@@ -65,7 +70,9 @@ class MR_Baseline {
 			$current[ self::relpath( $path ) ] = $hash;
 		}
 
-		$rows     = $wpdb->get_results( "SELECT path, sha FROM " . self::table(), OBJECT_K );
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
+		$rows     = $wpdb->get_results( "SELECT path, sha FROM {$table}", OBJECT_K );
 		$baseline = [];
 		foreach ( $rows as $row ) {
 			$baseline[ $row->path ] = $row->sha;
@@ -96,16 +103,20 @@ class MR_Baseline {
 		$hash = @md5_file( $abs );
 		if ( ! $hash ) return;
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$existing = $wpdb->get_var( $wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
 			"SELECT id FROM " . self::table() . " WHERE path = %s", $rel_path
 		) );
 		if ( $existing ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->update( self::table(), [
 				'sha'       => $hash,
 				'size'      => @filesize( $abs ),
 				'last_seen' => current_time( 'mysql' ),
 			], [ 'id' => $existing ], [ '%s', '%d', '%s' ], [ '%d' ] );
 		} else {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->insert( self::table(), [
 				'path'      => $rel_path,
 				'sha'       => $hash,
@@ -120,6 +131,7 @@ class MR_Baseline {
 	 */
 	public static function remove_from_baseline( $rel_path ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->delete( self::table(), [ 'path' => $rel_path ], [ '%s' ] );
 	}
 

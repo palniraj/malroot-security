@@ -193,7 +193,7 @@ class MR_Realtime {
 		if ( ! is_string( $url ) ) {
 			return $preempt;
 		}
-		$host = parse_url( $url, PHP_URL_HOST );
+		$host = wp_parse_url( $url, PHP_URL_HOST );
 		if ( ! $host ) {
 			return $preempt;
 		}
@@ -240,7 +240,7 @@ class MR_Realtime {
 		];
 
 		// Also skip self-traffic (Malroot's own bot-cloak scanner hits the homepage)
-		$home_host = parse_url( home_url(), PHP_URL_HOST );
+		$home_host = wp_parse_url( home_url(), PHP_URL_HOST );
 		if ( $host === $home_host ) {
 			return $preempt;
 		}
@@ -254,17 +254,22 @@ class MR_Realtime {
 		$table = $wpdb->prefix . 'malroot_connections';
 		$now   = current_time( 'mysql' );
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$existing_id = $wpdb->get_var( $wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			"SELECT id FROM {$table} WHERE domain = %s AND url = %s LIMIT 1",
 			$host, substr( $url, 0, 1000 )
 		) );
 
 		if ( $existing_id ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 			$wpdb->query( $wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				"UPDATE {$table} SET hit_count = hit_count + 1, last_seen = %s WHERE id = %d",
 				$now, $existing_id
 			) );
 		} else {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->insert( $table, [
 				'domain'     => $host,
 				'url'        => substr( $url, 0, 1000 ),
@@ -293,6 +298,7 @@ class MR_Realtime {
 	}
 
 	private static function caller_path() {
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace
 		$trace = debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS, 8 );
 		foreach ( $trace as $f ) {
 			if ( ! empty( $f['file'] ) && false === strpos( $f['file'], '/wp-includes/' ) && false === strpos( $f['file'], '/malroot-security/' ) ) {
@@ -303,6 +309,11 @@ class MR_Realtime {
 	}
 
 	private static function ip() {
-		return $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
+		if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+			return sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) );
+		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
 	}
 }

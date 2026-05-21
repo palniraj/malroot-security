@@ -23,12 +23,16 @@ class MR_Alerting {
 		// Deduplicate: if we sent the same alert in the last 24h, only record (don't dispatch)
 		$dedup_window = 24 * HOUR_IN_SECONDS;
 		$since        = gmdate( 'Y-m-d H:i:s', time() - $dedup_window );
+		$table        = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$recent       = $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM " . self::table() . "
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"SELECT COUNT(*) FROM {$table}
 			 WHERE event_type = %s AND summary = %s AND created_at > %s",
 			$event_type, $summary, $since
 		) );
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert(
 			self::table(),
 			[
@@ -78,8 +82,9 @@ class MR_Alerting {
 
 		$score   = MR_Findings::security_score( $scan_id );
 		$summary = sprintf(
-			__( 'Scan complete on %s — %d critical, %d high. Score %d/100.', 'malroot-security' ),
-			parse_url( home_url(), PHP_URL_HOST ),
+   /* translators: %s is replaced with dynamic content */
+			__( 'Scan complete on %1$s — %2$d critical, %3$d high. Score %4$d/100.', 'malroot-security' ),
+			wp_parse_url( home_url(), PHP_URL_HOST ),
 			$counts['critical'],
 			$counts['high'],
 			$score
@@ -105,7 +110,7 @@ class MR_Alerting {
 	 * Returns true on success, WP_Error on failure.
 	 */
 	public static function send_test_email( $to ) {
-		$site    = parse_url( home_url(), PHP_URL_HOST );
+		$site    = wp_parse_url( home_url(), PHP_URL_HOST );
 		$subject = sprintf( '[Malroot TEST] Email delivery check — %s', $site );
 		$body    = implode( "\n", [
 			'This is a test email from Malroot Security.',
@@ -143,7 +148,7 @@ class MR_Alerting {
 		// Email
 		$to = $settings['alert_email'] ?? get_option( 'admin_email' );
 		if ( $to ) {
-			$site    = parse_url( home_url(), PHP_URL_HOST );
+			$site    = wp_parse_url( home_url(), PHP_URL_HOST );
 			$subject = sprintf( '[Malroot %s] %s', strtoupper( $severity ), $site );
 			$body    = self::format_email( $severity, $event_type, $summary, $context );
 			wp_mail( $to, $subject, $body );
@@ -156,7 +161,7 @@ class MR_Alerting {
 				'text' => sprintf(
 					'*[Malroot %s]* %s — %s',
 					strtoupper( $severity ),
-					parse_url( home_url(), PHP_URL_HOST ),
+					wp_parse_url( home_url(), PHP_URL_HOST ),
 					$summary
 				),
 			];
@@ -171,7 +176,7 @@ class MR_Alerting {
 
 	private static function format_email( $severity, $event_type, $summary, array $context ) {
 		$lines = [];
-		$lines[] = '[Malroot ' . strtoupper( $severity ) . '] ' . parse_url( home_url(), PHP_URL_HOST );
+		$lines[] = '[Malroot ' . strtoupper( $severity ) . '] ' . wp_parse_url( home_url(), PHP_URL_HOST );
 		$lines[] = '';
 		$lines[] = $summary;
 		$lines[] = '';

@@ -52,6 +52,7 @@ class MR_Spam_Shield {
 
 	public static function check_registration( $errors, $sanitized_user_login, $user_email ) {
 		// Honeypot tripped → silently fail
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( ! empty( $_POST[ self::HONEYPOT_FIELD ] ) ) {
 			$errors->add( 'mr_spam', __( 'Registration failed.', 'malroot-security' ) );
 			MR_Alerting::alert( 'medium', 'spam_honeypot', 'Honeypot tripped on registration', [
@@ -162,6 +163,11 @@ class MR_Spam_Shield {
 	}
 
 	private static function ip() {
-		return $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
+		if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+			return sanitize_text_field( wp_unslash( explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] ) );
+		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
 	}
 }

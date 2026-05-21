@@ -49,6 +49,7 @@ class MR_Quarantine {
 	 */
 	public static function quarantine_finding( $finding_id ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$f = $wpdb->get_row( $wpdb->prepare(
 			"SELECT * FROM {$wpdb->prefix}malroot_findings WHERE id = %d", $finding_id
 		) );
@@ -92,6 +93,7 @@ class MR_Quarantine {
 			return $ok;
 		}
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->update(
 			$wpdb->prefix . 'malroot_findings',
 			[ 'status' => 'fixed' ],
@@ -118,6 +120,7 @@ class MR_Quarantine {
 		$dest = $dest_dir . '/' . basename( $rel_path ) . '.' . time() . '.quarantined';
 
 		// Try rename first (fastest, same filesystem)
+  // phpcs:ignore WordPress.WP.AlternativeFunctions
 		if ( @rename( $abs, $dest ) ) {
 			self::record_log( 'file', $rel_path, [ 'dest' => $dest, 'method' => 'rename' ] );
 			return true;
@@ -133,6 +136,7 @@ class MR_Quarantine {
 		}
 
 		// Can't copy either — try to at least zero out the file in place.
+  // phpcs:ignore WordPress.WP.AlternativeFunctions
 		if ( is_writable( $abs ) ) {
 			@file_put_contents( $abs, '<?php // Quarantined by Malroot Security' . "\n" );
 			self::record_log( 'file', $rel_path, [ 'dest' => $abs, 'method' => 'zeroed_in_place' ] );
@@ -165,11 +169,13 @@ class MR_Quarantine {
 
 	private static function quarantine_postmeta_key( $meta_key ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s",
 			$meta_key
 		), ARRAY_A );
 		self::record_log( 'postmeta', $meta_key, [ 'rows' => $rows ] );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->delete( $wpdb->postmeta, [ 'meta_key' => $meta_key ], [ '%s' ] );
 		return true;
 	}
@@ -191,6 +197,7 @@ class MR_Quarantine {
 		if ( $id ) {
 			$users = [ get_userdata( $id ) ];
 		} else {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$user_ids = $wpdb->get_col( $wpdb->prepare(
 				"SELECT ID FROM {$wpdb->users} WHERE user_login = %s", $login
 			) );
@@ -221,6 +228,7 @@ class MR_Quarantine {
 			self::record_log( 'user', $u->user_login . '#' . $u->ID, [ 'backup' => $backup ] );
 
 			// Reassign the user's content to user 1 so deletion is safe
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 			wp_delete_user( $u->ID, 1 );
 		}
 		return true;
@@ -233,6 +241,7 @@ class MR_Quarantine {
 	private static function quarantine_trigger( $trigger_name ) {
 		global $wpdb;
 		$dbname = $wpdb->dbname;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$row = $wpdb->get_row( $wpdb->prepare(
 			"SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
 			 FROM information_schema.TRIGGERS
@@ -246,12 +255,14 @@ class MR_Quarantine {
 
 		// Identifier needs to be quoted; trigger names cannot contain backticks.
 		$safe_name = preg_replace( '/[^A-Za-z0-9_]/', '', $trigger_name );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.DirectDatabaseQuery.SchemaChange
 		$wpdb->query( "DROP TRIGGER IF EXISTS `{$safe_name}`" );
 		return true;
 	}
 
 	private static function quarantine_event( $event_name ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$row = $wpdb->get_row( $wpdb->prepare(
 			"SELECT EVENT_NAME, EVENT_DEFINITION, STATUS
 			 FROM information_schema.EVENTS
@@ -263,6 +274,7 @@ class MR_Quarantine {
 		}
 		self::record_log( 'event', $event_name, [ 'definition' => (array) $row ] );
 		$safe_name = preg_replace( '/[^A-Za-z0-9_]/', '', $event_name );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.DirectDatabaseQuery.SchemaChange
 		$wpdb->query( "DROP EVENT IF EXISTS `{$safe_name}`" );
 		return true;
 	}
@@ -273,6 +285,7 @@ class MR_Quarantine {
 
 	private static function record_log( $type, $target, array $payload ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert(
 			self::table(),
 			[
@@ -288,8 +301,11 @@ class MR_Quarantine {
 
 	public static function restore( $quarantine_id ) {
 		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$row = $wpdb->get_row( $wpdb->prepare(
-			"SELECT * FROM " . self::table() . " WHERE id = %d", $quarantine_id
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"SELECT * FROM {$table} WHERE id = %d", $quarantine_id
 		) );
 		if ( ! $row ) {
 			return new WP_Error( 'no_row', __( 'Quarantine record not found.', 'malroot-security' ) );
@@ -308,12 +324,13 @@ class MR_Quarantine {
 				wp_mkdir_p( dirname( $abs ) );
 
 				// Try rename first
+    // phpcs:ignore WordPress.WP.AlternativeFunctions
 				if ( @rename( $payload['dest'], $abs ) ) {
 					break;
 				}
 				// Fall back to copy (cross-owner filesystem)
 				if ( @copy( $payload['dest'], $abs ) ) {
-					@unlink( $payload['dest'] );
+					wp_delete_file( $payload['dest'] );
 					break;
 				}
 				return new WP_Error( 'restore_failed', sprintf(
@@ -329,6 +346,7 @@ class MR_Quarantine {
 
 			case 'postmeta':
 				foreach ( (array) ( $payload['rows'] ?? [] ) as $r ) {
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 					$wpdb->insert( $wpdb->postmeta, [
 						'post_id'    => (int) $r['post_id'],
 						'meta_key'   => $row->target,
@@ -345,6 +363,7 @@ class MR_Quarantine {
 				return new WP_Error( 'manual', __( 'Trigger/event restore is manual: see backup payload in the quarantine table.', 'malroot-security' ) );
 		}
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->update( self::table(), [ 'status' => self::STATUS_RESTORED ], [ 'id' => $row->id ] );
 		return true;
 	}

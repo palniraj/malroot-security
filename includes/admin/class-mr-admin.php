@@ -52,6 +52,7 @@ class MR_Admin {
 				'findings'      => __( 'Findings', 'malroot-security' ),
 				'snapshotting'  => __( 'Taking snapshot…', 'malroot-security' ),
 				'updateSnapshot'=> __( 'Update Snapshot', 'malroot-security' ),
+    /* translators: %s is replaced with dynamic content */
 				'snapshotDone'  => __( 'Snapshot updated (%d files). Running a fresh scan…', 'malroot-security' ),
 				'stepFiles'     => __( 'Scanning files…', 'malroot-security' ),
 				'stepDatabase'  => __( 'Scanning database…', 'malroot-security' ),
@@ -85,6 +86,7 @@ class MR_Admin {
 	public static function handle_run_scan() {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_run_scan' );
+		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
 		MR_Loader::run_full_scan();
 		wp_safe_redirect( admin_url( 'admin.php?page=malroot-security&scanned=1' ) );
@@ -94,7 +96,7 @@ class MR_Admin {
 	public static function handle_quarantine() {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_quarantine' );
-		$id = (int) ( $_POST['finding_id'] ?? 0 );
+		$id = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
 		$result = MR_Quarantine::quarantine_finding( $id );
 		$args = is_wp_error( $result ) ? [ 'mr_error' => urlencode( $result->get_error_message() ) ] : [ 'mr_quarantined' => 1 ];
 		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php?page=malroot-security' ) ) );
@@ -104,7 +106,7 @@ class MR_Admin {
 	public static function handle_restore() {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_restore' );
-		$id = (int) ( $_POST['quarantine_id'] ?? 0 );
+		$id = (int) ( isset( $_POST['quarantine_id'] ) ? sanitize_text_field( wp_unslash( $_POST['quarantine_id'] ) ) : 0 );
 		$result = MR_Quarantine::restore( $id );
 		$args = is_wp_error( $result ) ? [ 'mr_error' => urlencode( $result->get_error_message() ) ] : [ 'mr_restored' => 1 ];
 		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php?page=malroot-quarantine' ) ) );
@@ -122,17 +124,19 @@ class MR_Admin {
 			'monitor_outbound'         => empty( $_POST['monitor_outbound'] ) ? 0 : 1,
 			'scheduled_scans'          => empty( $_POST['scheduled_scans'] ) ? 0 : 1,
 			'require_2fa_admins'       => empty( $_POST['require_2fa_admins'] ) ? 0 : 1,
-			'alert_email'              => sanitize_email( $_POST['alert_email'] ?? '' ),
-			'slack_webhook'            => esc_url_raw( $_POST['slack_webhook'] ?? '' ),
-			'login_threshold'          => max( 3, min( 20, (int) ( $_POST['login_threshold'] ?? 5 ) ) ),
+			'alert_email'              => sanitize_email( wp_unslash( $_POST['alert_email'] ?? '' ) ),
+			'slack_webhook'            => esc_url_raw( wp_unslash( $_POST['slack_webhook'] ?? '' ) ),
+			'login_threshold'          => max( 3, min( 20, (int) ( isset( $_POST['login_threshold'] ) ? sanitize_text_field( wp_unslash( $_POST['login_threshold'] ) ) : 5 ) ) ),
 		];
 		update_option( 'malroot_settings', array_merge( $current, $new ) );
 
 		// Custom blocked logins
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		$blocked_logins = array_filter( array_map( 'sanitize_user', explode( "\n", wp_unslash( $_POST['blocked_logins'] ?? '' ) ) ) );
 		update_option( 'malroot_blocked_logins', array_values( $blocked_logins ) );
 
 		// Custom blocked email domains
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		$blocked_domains = array_filter( array_map( 'sanitize_text_field', explode( "\n", wp_unslash( $_POST['blocked_email_domains'] ?? '' ) ) ) );
 		update_option( 'malroot_blocked_email_domains', array_values( $blocked_domains ) );
 
@@ -158,7 +162,8 @@ class MR_Admin {
 		$findings = $last ? MR_Findings::get_by_scan( $last ) : [];
 		$counts   = MR_Findings::counts_by_severity( $last );
 		$score    = MR_Findings::security_score( $last );
-		$view     = isset( $_GET['view'] ) && $_GET['view'] === 'expert' ? 'expert' : 'simple';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$view     = isset( $_GET['view'] ) && sanitize_key( wp_unslash( $_GET['view'] ) ) === 'expert' ? 'expert' : 'simple';
 		?>
 		<div class="wrap malroot-wrap">
 			<h1>Malroot Security <span class="malroot-version">v<?php echo esc_html( MALROOT_VERSION ); ?></span></h1>
@@ -172,7 +177,10 @@ class MR_Admin {
 				</button>
 				<?php if ( $last ) : ?>
 					<span class="malroot-last-scan">
-						<?php printf( esc_html__( 'Last scan: %s ago', 'malroot-security' ), esc_html( human_time_diff( $last ) ) ); ?>
+						<?php
+						/* translators: %s: human-readable time difference (e.g. "5 minutes") */
+						printf( esc_html__( 'Last scan: %s ago', 'malroot-security' ), esc_html( human_time_diff( $last ) ) );
+						?>
 					</span>
 				<?php endif; ?>
 				<button id="malroot-snapshot-btn" class="button button-secondary"
@@ -313,13 +321,16 @@ class MR_Admin {
 						<div style="font-size:16px;font-weight:600;margin-bottom:8px;color:#1e4620">
 							<?php
 							printf(
-								esc_html( _n(
-									'%d file change verified as safe',
-									'%d file changes verified as safe',
-									$accept_count,
-									'malroot-security'
-								) ),
-								$accept_count
+								esc_html(
+									/* translators: %d: number of file changes verified as safe */
+									_n(
+										'%d file change verified as safe',
+										'%d file changes verified as safe',
+										$accept_count,
+										'malroot-security'
+									)
+								),
+								(int) $accept_count
 							);
 							?>
 						</div>
@@ -329,12 +340,14 @@ class MR_Admin {
 							$probably_n = count( $probably_safe );
 							$bits = [];
 							if ( $safe_n ) {
+								/* translators: %d: number of files matching official WordPress.org checksums */
 								$bits[] = sprintf( esc_html__( '%d match official WordPress.org checksums', 'malroot-security' ), $safe_n );
 							}
 							if ( $probably_n ) {
+								/* translators: %d: number of files matching a recent plugin/theme update */
 								$bits[] = sprintf( esc_html__( '%d match a recent plugin/theme update', 'malroot-security' ), $probably_n );
 							}
-							echo esc_html( implode( '; ', $bits ) ) . '.';
+							echo esc_html( implode( '; ', $bits ) . '.' );
 							?>
 						</p>
 						<p style="font-size:13px;color:#555;margin:0 0 16px">
@@ -478,7 +491,7 @@ class MR_Admin {
 		?>
 		<div style="border-left:4px solid <?php echo esc_attr( $border_color ); ?>;background:#fff;border:1px solid #e0e0e0;border-left:4px solid <?php echo esc_attr( $border_color ); ?>;border-radius:4px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
 			<div style="display:flex;align-items:flex-start;gap:12px">
-				<span style="font-size:28px;line-height:1"><?php echo $pl['icon']; ?></span>
+				<span style="font-size:28px;line-height:1"><?php echo esc_html( $pl['icon'] ); ?></span>
 				<div style="flex:1">
 					<div style="font-size:16px;font-weight:600;margin-bottom:8px"><?php echo wp_kses_post( $pl['title'] ); ?></div>
 
@@ -557,6 +570,7 @@ class MR_Admin {
 
 	public static function render_quarantine() {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}malroot_quarantine ORDER BY id DESC LIMIT 200" );
 		$type_icons = [];
 		?>
@@ -611,6 +625,7 @@ class MR_Admin {
 
 	public static function render_connections() {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}malroot_connections ORDER BY last_seen DESC LIMIT 500" );
 		?>
 		<div class="wrap malroot-wrap">
@@ -633,7 +648,7 @@ class MR_Admin {
 						<td>
 							<strong style="font-size:13px"><?php echo esc_html( $r->domain ); ?></strong>
 						</td>
-						<td><span class="mr-badge mr-badge-<?php echo strtolower( esc_attr( $r->method ) ); ?>"><?php echo esc_html( $r->method ); ?></span></td>
+						<td><span class="mr-badge mr-badge-<?php echo esc_attr( strtolower( $r->method ) ); ?>"><?php echo esc_html( $r->method ); ?></span></td>
 						<td style="text-align:center;font-weight:600"><?php echo (int) $r->hit_count; ?></td>
 						<td>
 							<?php if ( $r->caller ) : ?>
@@ -654,6 +669,7 @@ class MR_Admin {
 
 	public static function render_alerts() {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}malroot_alerts ORDER BY id DESC LIMIT 200" );
 		// Human-readable event labels
 		$event_labels = [
@@ -806,12 +822,14 @@ class MR_Admin {
 	/* ---------------------------------------------------------------- */
 
 	private static function flash_messages() {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
 		if ( isset( $_GET['scanned'] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Scan complete.', 'malroot-security' ) . '</p></div>';
 		}
 		if ( isset( $_GET['mr_baseline_built'] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' .
 				sprintf(
+					/* translators: %d: number of files in the security snapshot */
 					esc_html__( 'Security snapshot updated (%d files). Future scans will compare against this new baseline.', 'malroot-security' ),
 					(int) $_GET['mr_baseline_built']
 				) . '</p></div>';
@@ -828,8 +846,9 @@ class MR_Admin {
 		if ( isset( $_GET['mr_test_sent'] ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' .
 				sprintf(
+					/* translators: %s: email address the test was sent to */
 					esc_html__( 'Test email sent to %s. Check your inbox (and spam folder).', 'malroot-security' ),
-					'<strong>' . esc_html( urldecode( wp_unslash( $_GET['mr_test_sent'] ) ) ) . '</strong>'
+					'<strong>' . esc_html( urldecode( sanitize_text_field( wp_unslash( $_GET['mr_test_sent'] ) ) ) ) . '</strong>'
 				) . '</p></div>';
 		}
 		if ( isset( $_GET['mr_accepted'] ) ) {
@@ -839,8 +858,9 @@ class MR_Admin {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Finding marked as ignored. It will not appear in future open lists.', 'malroot-security' ) . '</p></div>';
 		}
 		if ( isset( $_GET['mr_error'] ) ) {
-			echo '<div class="notice notice-error is-dismissible"><p>' . esc_html( urldecode( wp_unslash( $_GET['mr_error'] ) ) ) . '</p></div>';
+			echo '<div class="notice notice-error is-dismissible"><p>' . esc_html( urldecode( sanitize_text_field( wp_unslash( $_GET['mr_error'] ) ) ) ) . '</p></div>';
 		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 	}
 
 	private static function render_score_tiles( $score, $counts ) {
@@ -858,7 +878,7 @@ class MR_Admin {
 			?>
 			<div class="malroot-tile">
 				<div class="malroot-tile-label"><?php echo esc_html( ucfirst( $sev ) ); ?></div>
-				<div class="malroot-tile-value" style="color:<?php echo $c > 0 ? esc_attr( $color ) : '#1d2327'; ?>"><?php echo $c; ?></div>
+				<div class="malroot-tile-value" style="color:<?php echo $c > 0 ? esc_attr( $color ) : '#1d2327'; ?>"><?php echo esc_html( (string) $c ); ?></div>
 			</div>
 			<?php endforeach; ?>
 		</div>
@@ -944,7 +964,7 @@ class MR_Admin {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_run_incident' );
 
-		$token = (string) ( $_POST['token'] ?? '' );
+		$token = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
 		$report = MR_Incident_Response::run( $token );
 
 		if ( is_wp_error( $report ) ) {
@@ -960,6 +980,7 @@ class MR_Admin {
 	public static function handle_rebuild_baseline() {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_rebuild_baseline' );
+		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
 		$count = MR_Baseline::rebuild();
 		wp_safe_redirect( add_query_arg(
@@ -974,7 +995,8 @@ class MR_Admin {
 		check_admin_referer( 'malroot_accept_finding' );
 
 		global $wpdb;
-		$id = (int) ( $_POST['finding_id'] ?? 0 );
+		$id = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$f = $wpdb->get_row( $wpdb->prepare(
 			"SELECT * FROM {$wpdb->prefix}malroot_findings WHERE id = %d", $id
 		) );
@@ -994,9 +1016,12 @@ class MR_Admin {
 		if ( file_exists( $abs ) ) {
 			$hash = @md5_file( $abs );
 			$baseline_table = $wpdb->prefix . 'malroot_baseline';
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter
 			$wpdb->query( $wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				"DELETE FROM {$baseline_table} WHERE path = %s", $f->target
 			) );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->insert( $baseline_table, [
 				'path'      => $f->target,
 				'sha'       => $hash,
@@ -1005,12 +1030,14 @@ class MR_Admin {
 			], [ '%s', '%s', '%d', '%s' ] );
 		} else {
 			// File was deleted; remove it from baseline
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->query( $wpdb->prepare(
 				"DELETE FROM {$wpdb->prefix}malroot_baseline WHERE path = %s", $f->target
 			) );
 		}
 
 		// Mark the finding as fixed
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->update(
 			$wpdb->prefix . 'malroot_findings',
 			[ 'status' => 'fixed' ],
@@ -1033,7 +1060,8 @@ class MR_Admin {
 		check_admin_referer( 'malroot_ignore_finding' );
 
 		global $wpdb;
-		$id = (int) ( $_POST['finding_id'] ?? 0 );
+		$id = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->update(
 			$wpdb->prefix . 'malroot_findings',
 			[ 'status' => 'ignored' ],
@@ -1076,6 +1104,7 @@ class MR_Admin {
 				$f->created_at,
 			] );
 		}
+  // phpcs:ignore WordPress.WP.AlternativeFunctions
 		fclose( $out );
 		exit;
 	}
@@ -1118,6 +1147,7 @@ class MR_Admin {
 	public static function handle_spam_delete() {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_spam_delete' );
+		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
 		@set_time_limit( 300 );
 		$result = MR_Spam_Shield::bulk_cleanup( false );
 		wp_safe_redirect( add_query_arg( [ 'mr_spam_deleted' => (int) $result['count'] ], admin_url( 'admin.php?page=malroot-spam' ) ) );
@@ -1130,6 +1160,7 @@ class MR_Admin {
 
 	public static function render_logins() {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}malroot_logins ORDER BY id DESC LIMIT 200" );
 		?>
 		<div class="wrap">
@@ -1180,9 +1211,12 @@ class MR_Admin {
 			<p><?php esc_html_e( 'Find and remove subscriber accounts that match known spam patterns. Run a dry run first to see what would be deleted.', 'malroot-security' ); ?></p>
 
 			<?php self::flash_messages(); ?>
-			<?php if ( isset( $_GET['mr_spam_deleted'] ) ) : ?>
+			<?php if ( isset( $_GET['mr_spam_deleted'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 				<div class="notice notice-success is-dismissible"><p>
-					<?php printf( esc_html__( 'Deleted %d spam subscriber accounts.', 'malroot-security' ), (int) $_GET['mr_spam_deleted'] ); ?>
+					<?php
+					/* translators: %d: number of spam subscriber accounts deleted */
+					printf( esc_html__( 'Deleted %d spam subscriber accounts.', 'malroot-security' ), (int) $_GET['mr_spam_deleted'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+					?>
 				</p></div>
 			<?php endif; ?>
 
@@ -1194,7 +1228,9 @@ class MR_Admin {
 
 			<?php if ( $dryrun && ! empty( $dryrun['sample'] ) ) : ?>
 				<div style="margin-top:20px;border:1px solid #ccd0d4;background:#fff;padding:20px">
-					<p><strong><?php printf( esc_html__( 'Dry run: %d spam users would be deleted.', 'malroot-security' ), (int) $dryrun['count'] ); ?></strong></p>
+					<p><strong><?php
+					/* translators: %d: number of spam users that would be deleted */
+					printf( esc_html__( 'Dry run: %d spam users would be deleted.', 'malroot-security' ), (int) $dryrun['count'] ); ?></strong></p>
 					<table class="widefat striped">
 						<thead><tr><th><?php esc_html_e( 'ID', 'malroot-security' ); ?></th><th><?php esc_html_e( 'Login', 'malroot-security' ); ?></th><th><?php esc_html_e( 'Email', 'malroot-security' ); ?></th></tr></thead>
 						<tbody>
@@ -1209,7 +1245,10 @@ class MR_Admin {
 						<input type="hidden" name="action" value="malroot_spam_delete" />
 						<?php wp_nonce_field( 'malroot_spam_delete' ); ?>
 						<button type="submit" class="button button-link-delete" onclick="return confirm('Delete <?php echo (int) $dryrun['count']; ?> users? Their content reassigns to admin.')">
-							<?php printf( esc_html__( 'Delete %d users', 'malroot-security' ), (int) $dryrun['count'] ); ?>
+							<?php
+							/* translators: %d: number of users to delete */
+							printf( esc_html__( 'Delete %d users', 'malroot-security' ), (int) $dryrun['count'] );
+							?>
 						</button>
 					</form>
 				</div>
@@ -1228,7 +1267,7 @@ class MR_Admin {
 			<p><?php esc_html_e( 'One-click runs the cleanup we developed for the system-control / newsfeed attack. Every action is reversible via the Quarantine page.', 'malroot-security' ); ?></p>
 
 			<?php self::flash_messages(); ?>
-			<?php if ( isset( $_GET['mr_ir_done'] ) ) : ?>
+			<?php if ( isset( $_GET['mr_ir_done'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Incident response complete. See report below.', 'malroot-security' ); ?></p></div>
 			<?php endif; ?>
 
@@ -1289,7 +1328,8 @@ class MR_Admin {
 					<?php endforeach; ?>
 					<p style="margin-top:12px;font-size:12px;color:#888">
 						<?php printf(
-							esc_html__( 'Started: %s — Finished: %s', 'malroot-security' ),
+							/* translators: %1$s: start time, %2$s: finish time */
+							esc_html__( 'Started: %1$s — Finished: %2$s', 'malroot-security' ),
 							esc_html( $last_report['started_at'] ?? '' ),
 							esc_html( $last_report['finished_at'] ?? '' )
 						); ?>

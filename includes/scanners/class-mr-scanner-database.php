@@ -26,6 +26,7 @@ class MR_Scanner_Database extends MR_Scanner_Base {
 		$batch_size = 500;
 		$offset     = 0;
 		while ( true ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$rows = $wpdb->get_results(
 				$wpdb->prepare(
 					"SELECT option_id, option_name, option_value FROM {$wpdb->options} ORDER BY option_id LIMIT %d OFFSET %d",
@@ -70,6 +71,7 @@ class MR_Scanner_Database extends MR_Scanner_Base {
 		}
 
 		// 3) Bot-only post markers planted by the malware
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$bot_meta = $wpdb->get_var(
 			"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key IN ('_sc_bot_only','_sc_bot_type')"
 		);
@@ -88,6 +90,7 @@ class MR_Scanner_Database extends MR_Scanner_Base {
 			[ 'DB-002', '/<script[^>]*>[^<]*String\.fromCharCode\s*\(\s*60/', 'critical', 'Obfuscated <script> with fromCharCode redirect' ],
 			[ 'DB-008', '/dns\.google\/resolve.*?type=txt/',                  'critical', 'DNS exfiltration JS in post content' ],
 		];
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results( "SELECT ID, post_title, post_content FROM {$wpdb->posts} WHERE post_status IN ('publish','private','draft') AND post_type IN ('post','page') AND CHAR_LENGTH(post_content) < 200000" );
 		foreach ( $rows as $row ) {
 			foreach ( $post_signatures as $sig ) {

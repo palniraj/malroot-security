@@ -57,6 +57,7 @@ class MR_Incident_Response {
 
 	private static function drop_admin_injection_triggers() {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT TRIGGER_NAME, ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = %s",
 			$wpdb->dbname
@@ -83,6 +84,7 @@ class MR_Incident_Response {
 	private static function synthesise_trigger_finding( $trigger_name ) {
 		// Insert a synthetic finding row so the existing quarantine pipeline can act on it.
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert(
 			$wpdb->prefix . 'malroot_findings',
 			[
@@ -105,6 +107,7 @@ class MR_Incident_Response {
 		$bad = [ 'newsfeed', 'system_control', 'wpadmin', 'wordpress_administrator', 'wp_admin', 'acfmain', 'defino' ];
 		$removed = [];
 		foreach ( $bad as $login ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$ids = $wpdb->get_col( $wpdb->prepare(
 				"SELECT ID FROM {$wpdb->users} WHERE user_login = %s",
 				$login
@@ -128,6 +131,7 @@ class MR_Incident_Response {
 
 	private static function synthesise_user_finding( $login, $id ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert( $wpdb->prefix . 'malroot_findings', [
 			'scan_id'  => time(),
 			'module'   => 'incident-response',
@@ -153,6 +157,7 @@ class MR_Incident_Response {
 			}
 		}
 		// Transients
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_sc_%' OR option_name LIKE '_transient_timeout_sc_%'" );
 		$removed[] = [ 'transients' => 'sc_*', 'result' => 'cleared' ];
 		return $removed;
@@ -160,6 +165,7 @@ class MR_Incident_Response {
 
 	private static function synthesise_option_finding( $option_name ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert( $wpdb->prefix . 'malroot_findings', [
 			'scan_id'  => time(),
 			'module'   => 'incident-response',
@@ -178,6 +184,7 @@ class MR_Incident_Response {
 		$keys = [ '_sc_bot_only', '_sc_bot_type' ];
 		$removed = [];
 		foreach ( $keys as $key ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$count = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s", $key
 			) );
@@ -191,6 +198,7 @@ class MR_Incident_Response {
 
 	private static function synthesise_postmeta_finding( $meta_key ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert( $wpdb->prefix . 'malroot_findings', [
 			'scan_id'  => time(),
 			'module'   => 'incident-response',
@@ -206,7 +214,9 @@ class MR_Incident_Response {
 
 	private static function clear_sessions() {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key = 'session_tokens'" );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->delete( $wpdb->usermeta, [ 'meta_key' => 'session_tokens' ], [ '%s' ] );
 		return [ 'rows_cleared' => $count, 'note' => 'all users will need to re-login' ];
 	}

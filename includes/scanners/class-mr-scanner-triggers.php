@@ -18,6 +18,7 @@ class MR_Scanner_Triggers extends MR_Scanner_Base {
 		$dbname = $wpdb->dbname;
 
 		// Triggers
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$triggers = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE, ACTION_STATEMENT
@@ -59,6 +60,7 @@ class MR_Scanner_Triggers extends MR_Scanner_Base {
 		}
 
 		// Events (the other place attackers can hide periodic SQL)
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$events = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT EVENT_NAME, EVENT_DEFINITION, STATUS

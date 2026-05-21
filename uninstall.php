@@ -3,12 +3,14 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 global $wpdb;
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}malroot_findings" );
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}malroot_quarantine" );
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}malroot_connections" );
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}malroot_alerts" );
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}malroot_logins" );
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}malroot_baseline" );
+// phpcs:enable
 
 delete_option( 'malroot_admin_whitelist' );
 delete_option( 'malroot_muplugin_allowlist' );

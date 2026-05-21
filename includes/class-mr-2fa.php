@@ -59,12 +59,12 @@ class MR_TwoFactor {
 		?>
 		<h2 id="malroot-2fa"><?php esc_html_e( 'Two-Factor Authentication (Malroot)', 'malroot-security' ); ?></h2>
 
-		<?php if ( isset( $_GET['mr_2fa_enabled'] ) ) : ?>
+		<?php if ( isset( $_GET['mr_2fa_enabled'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 			<div class="notice notice-success inline"><p>✓ <?php esc_html_e( '2FA enabled successfully.', 'malroot-security' ); ?></p></div>
-		<?php elseif ( isset( $_GET['mr_2fa_disabled'] ) ) : ?>
+		<?php elseif ( isset( $_GET['mr_2fa_disabled'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 			<div class="notice notice-warning inline"><p><?php esc_html_e( '2FA has been disabled.', 'malroot-security' ); ?></p></div>
-		<?php elseif ( isset( $_GET['mr_2fa_error'] ) ) : ?>
-			<div class="notice notice-error inline"><p><?php echo esc_html( wp_unslash( $_GET['mr_2fa_error'] ) ); ?></p></div>
+		<?php elseif ( isset( $_GET['mr_2fa_error'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+			<div class="notice notice-error inline"><p><?php echo esc_html( sanitize_text_field( wp_unslash( $_GET['mr_2fa_error'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.MissingUnslash ?></p></div>
 		<?php endif; ?>
 
 		<table class="form-table">
@@ -180,7 +180,7 @@ class MR_TwoFactor {
 	/* ---------------------------------------------------------------- */
 
 	public static function handle_setup() {
-		$user_id = (int) ( $_REQUEST['user_id'] ?? 0 );
+		$user_id = (int) ( isset( $_REQUEST['user_id'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['user_id'] ) ) : 0 );
 		if ( ! current_user_can( 'edit_user', $user_id ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_2fa_setup_' . $user_id );
 
@@ -191,7 +191,7 @@ class MR_TwoFactor {
 				wp_safe_redirect( add_query_arg( 'mr_2fa_error', urlencode( 'Setup expired. Please click "Enable 2FA" again.' ), self::profile_url( $user_id ) ) );
 				exit;
 			}
-			$code = sanitize_text_field( $_POST['code'] ?? '' );
+			$code = sanitize_text_field( wp_unslash( $_POST['code'] ?? '' ) );
 			if ( ! MR_TOTP::verify( $pending['secret'], $code ) ) {
 				wp_safe_redirect( add_query_arg( 'mr_2fa_error', urlencode( 'Invalid code. Make sure your phone clock is correct.' ), self::profile_url( $user_id ) . '#malroot-2fa' ) );
 				exit;
@@ -223,7 +223,7 @@ class MR_TwoFactor {
 	}
 
 	public static function handle_disable() {
-		$user_id = (int) ( $_REQUEST['user_id'] ?? 0 );
+		$user_id = (int) ( isset( $_REQUEST['user_id'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['user_id'] ) ) : 0 );
 		if ( ! current_user_can( 'edit_user', $user_id ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_2fa_disable_' . $user_id );
 
@@ -270,12 +270,14 @@ class MR_TwoFactor {
 		}
 
 		// Don't intercept if we're on the 2FA verify action — that's handled separately
-		$action = $_REQUEST['action'] ?? '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		$action = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : '';
 		if ( $action === 'malroot_2fa_verify' || $action === 'malroot_2fa' ) {
 			return $user;
 		}
 
 		// Don't intercept if the 2FA nonce is present (shouldn't happen but safety)
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( isset( $_POST[ self::NONCE_FIELD ] ) ) {
 			return $user;
 		}
@@ -294,19 +296,22 @@ class MR_TwoFactor {
 		$redirect = add_query_arg( [
 			'action'        => 'malroot_2fa',
 			'malroot_token' => $token,
-			'redirect_to'   => esc_url_raw( $_REQUEST['redirect_to'] ?? admin_url() ),
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+			'redirect_to'   => esc_url_raw( isset( $_REQUEST['redirect_to'] ) ? wp_unslash( $_REQUEST['redirect_to'] ) : admin_url() ),
 		], $redirect );
 		wp_safe_redirect( $redirect );
 		exit;
 	}
 
 	public static function render_2fa_form() {
-		$token   = sanitize_text_field( $_GET['malroot_token'] ?? '' );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$token   = isset( $_GET['malroot_token'] ) ? sanitize_text_field( wp_unslash( $_GET['malroot_token'] ) ) : '';
 		$pending = get_transient( 'malroot_2fa_login_' . $token );
 		if ( ! $pending ) {
-			wp_die( __( 'Login session expired. Please log in again.', 'malroot-security' ) );
+			wp_die( esc_html__( 'Login session expired. Please log in again.', 'malroot-security' ) );
 		}
-		$redirect_to = esc_url_raw( $_GET['redirect_to'] ?? admin_url() );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$redirect_to = esc_url_raw( isset( $_GET['redirect_to'] ) ? wp_unslash( $_GET['redirect_to'] ) : admin_url() );
 		login_header( __( 'Two-Factor Authentication', 'malroot-security' ) );
 		?>
 		<style>
@@ -349,6 +354,7 @@ class MR_TwoFactor {
 	 */
 	public static function handle_2fa_verify() {
 		// This fires on login_form_malroot_2fa_verify
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated
 		if ( $_SERVER['REQUEST_METHOD'] !== 'POST' ) {
 			// GET request to this action = show the form (shouldn't happen but handle gracefully)
 			wp_safe_redirect( wp_login_url() );
@@ -358,11 +364,12 @@ class MR_TwoFactor {
 			self::show_2fa_error( __( 'Security check failed (no nonce). Please try again.', 'malroot-security' ) );
 			return;
 		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		if ( ! wp_verify_nonce( wp_unslash( $_POST[ self::NONCE_FIELD ] ), 'malroot_2fa_login' ) ) {
 			self::show_2fa_error( __( 'Security check failed (nonce invalid). Please log in again.', 'malroot-security' ) );
 			return;
 		}
-		$token   = sanitize_text_field( $_POST['malroot_token'] ?? '' );
+		$token   = isset( $_POST['malroot_token'] ) ? sanitize_text_field( wp_unslash( $_POST['malroot_token'] ) ) : '';
 		if ( ! $token ) {
 			self::show_2fa_error( __( 'Missing login token. Please log in again.', 'malroot-security' ) );
 			return;
@@ -378,7 +385,7 @@ class MR_TwoFactor {
 			return;
 		}
 
-		$code   = trim( sanitize_text_field( $_POST['malroot_2fa_code'] ?? '' ) );
+		$code   = trim( sanitize_text_field( wp_unslash( $_POST['malroot_2fa_code'] ?? '' ) ) );
 		$secret = get_user_meta( $user_obj->ID, self::META_SECRET, true );
 
 		// 1) TOTP code
@@ -403,23 +410,28 @@ class MR_TwoFactor {
 
 		MR_Alerting::alert( 'high', '2fa_failed',
 			"Failed 2FA attempt for '{$user_obj->user_login}'",
-			[ 'user_id' => $user_obj->ID, 'ip' => $_SERVER['REMOTE_ADDR'] ?? '' ]
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+			[ 'user_id' => $user_obj->ID, 'ip' => isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' ]
 		);
 		self::show_2fa_error( __( 'Invalid authentication code. Please try again.', 'malroot-security' ) );
 	}
 
 	private static function complete_login( $user_obj, $token ) {
 		delete_transient( 'malroot_2fa_login_' . $token );
-		$redirect_to = esc_url_raw( $_POST['redirect_to'] ?? admin_url() );
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$redirect_to = esc_url_raw( isset( $_POST['redirect_to'] ) ? wp_unslash( $_POST['redirect_to'] ) : admin_url() );
 		wp_set_auth_cookie( $user_obj->ID, false );
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally firing core hook
 		do_action( 'wp_login', $user_obj->user_login, $user_obj );
 		wp_safe_redirect( $redirect_to );
 		exit;
 	}
 
 	private static function show_2fa_error( $message ) {
-		$token       = sanitize_text_field( $_POST['malroot_token'] ?? '' );
-		$redirect_to = esc_url_raw( $_POST['redirect_to'] ?? admin_url() );
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$token       = isset( $_POST['malroot_token'] ) ? sanitize_text_field( wp_unslash( $_POST['malroot_token'] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$redirect_to = esc_url_raw( isset( $_POST['redirect_to'] ) ? wp_unslash( $_POST['redirect_to'] ) : admin_url() );
 		login_header( __( 'Two-Factor Authentication', 'malroot-security' ) );
 		?>
 		<div id="login_error" style="margin-bottom:1em"><?php echo esc_html( $message ); ?></div>
@@ -469,7 +481,8 @@ class MR_TwoFactor {
 		if ( get_user_meta( $user->ID, self::META_ENABLED, true ) ) return;
 
 		// Allow access only to profile.php and the admin-post 2FA setup
-		$current = isset( $_SERVER['REQUEST_URI'] ) ? wp_basename( wp_parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH ) ) : '';
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		$current = isset( $_SERVER['REQUEST_URI'] ) ? wp_basename( wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) ) : '';
 		$allowed = [ 'profile.php', 'admin-post.php', 'admin-ajax.php' ];
 		if ( in_array( $current, $allowed, true ) ) return;
 

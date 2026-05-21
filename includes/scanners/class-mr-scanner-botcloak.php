@@ -50,8 +50,8 @@ class MR_Scanner_BotCloak extends MR_Scanner_Base {
 			$code = wp_remote_retrieve_response_code( $bot_response );
 			$loc  = wp_remote_retrieve_header( $bot_response, 'location' );
 			if ( $code >= 300 && $code < 400 && $loc ) {
-				$loc_host = parse_url( $loc, PHP_URL_HOST );
-				$home_host = parse_url( $home, PHP_URL_HOST );
+				$loc_host = wp_parse_url( $loc, PHP_URL_HOST );
+				$home_host = wp_parse_url( $home, PHP_URL_HOST );
 				if ( $loc_host && $loc_host !== $home_host ) {
 					$this->record(
 						'BC-002',
@@ -82,12 +82,12 @@ class MR_Scanner_BotCloak extends MR_Scanner_Base {
 
 		$bot_links   = array_unique( $b[1] ?? [] );
 		$human_links = array_unique( $h[1] ?? [] );
-		$home_host   = parse_url( home_url(), PHP_URL_HOST );
+		$home_host   = wp_parse_url( home_url(), PHP_URL_HOST );
 
 		$extra = array_diff( $bot_links, $human_links );
 		// Keep only external-domain links (the spam pattern)
 		$extra = array_filter( $extra, function( $link ) use ( $home_host ) {
-			$h = parse_url( $link, PHP_URL_HOST );
+			$h = wp_parse_url( $link, PHP_URL_HOST );
 			return $h && $h !== $home_host;
 		} );
 		return array_values( $extra );
