@@ -1282,7 +1282,7 @@ class Malroot_Admin {
 					<li><?php esc_html_e( 'Quarantine sc_* options + clear sc_ transients', 'malroot-security' ); ?></li>
 					<li><?php esc_html_e( 'Quarantine _sc_bot_only / _sc_bot_type postmeta', 'malroot-security' ); ?></li>
 					<li><?php esc_html_e( 'Clear all session_tokens (forces every user to log in again)', 'malroot-security' ); ?></li>
-					<li><?php esc_html_e( 'Strip system-control from active_plugins', 'malroot-security' ); ?></li>
+					<li><?php esc_html_e( 'Detect system-control in active_plugins and flag it for you to deactivate manually', 'malroot-security' ); ?></li>
 				</ul>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:15px">
 					<input type="hidden" name="action" value="malroot_run_incident" />
@@ -1309,7 +1309,7 @@ class Malroot_Admin {
 										continue;
 									}
 									$result = $item['result'] ?? '';
-									$label  = $item['user'] ?? $item['option'] ?? $item['meta_key'] ?? $item['name'] ?? $item['transients'] ?? '';
+									$label  = $item['user'] ?? $item['option'] ?? $item['meta_key'] ?? $item['name'] ?? $item['plugin'] ?? $item['transients'] ?? '';
 									$icon_class = ( $result === 'quarantined' || $result === 'dropped' || $result === 'removed' || $result === 'cleared' )
 										? 'malroot-ir-ok' : ( strpos( $result, 'skip' ) !== false ? 'malroot-ir-skip' : 'malroot-ir-err' );
 									$icon = ( $icon_class === 'malroot-ir-ok' ) ? '✓' : ( $icon_class === 'malroot-ir-skip' ? '—' : '✗' );

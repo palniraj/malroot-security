@@ -136,7 +136,7 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 * Added an "External services" section to readme documenting every outbound request the plugin makes and linking to each provider's privacy policy and terms.
 * Replaced inline `<style>` and `<script>` blocks on the 2FA login and setup screens with `wp_register_style` / `wp_register_script` and `wp_add_inline_style` / `wp_add_inline_script`.
 * Quarantine directory moved to `wp_upload_dir()['basedir'] . '/malroot-security/quarantine'` instead of a hardcoded `WP_CONTENT_DIR` path.
-* Incident-response cleanup now uses the official `deactivate_plugins()` API instead of writing directly to the `active_plugins` option.
+* Incident-response cleanup no longer changes the activation status of other plugins. It now only detects a malicious `system-control` plugin and reports it so the administrator can deactivate it manually from the Plugins screen.
 * Admin top-level menu repositioned from position 3 to 80 to integrate cleanly with the standard WordPress admin hierarchy.
 * `wp_verify_nonce()` calls now run their input through `sanitize_text_field( wp_unslash() )` for defence-in-depth (the function is pluggable).
 * `$_SERVER` array values are sanitised before being passed to `explode()`.

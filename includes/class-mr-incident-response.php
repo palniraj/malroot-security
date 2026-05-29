@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
  *   3. Delete sc_* options + transients
  *   4. Remove _sc_bot_only / _sc_bot_type postmeta
  *   5. Clear all session_tokens (force re-login)
- *   6. Strip system-control from active_plugins
+ *   6. Detect system-control in active_plugins (reported only — never auto-deactivated)
  *
  * Returns a structured report.
  *
@@ -33,7 +33,7 @@ class Malroot_Incident_Response {
 		$report['steps']['options']   = self::remove_sc_options();
 		$report['steps']['postmeta']  = self::remove_sc_postmeta();
 		$report['steps']['sessions']  = self::clear_sessions();
-		$report['steps']['plugins']   = self::strip_system_control_active_plugin();
+		$report['steps']['plugins']   = self::detect_system_control_active_plugin();
 
 		$report['finished_at'] = current_time( 'mysql' );
 
@@ -221,22 +221,25 @@ class Malroot_Incident_Response {
 		return [ 'rows_cleared' => $count, 'note' => 'all users will need to re-login' ];
 	}
 
-	private static function strip_system_control_active_plugin() {
+	/**
+	 * Detect (but do NOT deactivate) any system-control plugin in active_plugins.
+	 *
+	 * Per WordPress.org guidelines, a plugin must not change the activation
+	 * status of other plugins — that is the user's decision. We only report
+	 * what we found so the administrator can deactivate and delete it from
+	 * the Plugins screen themselves.
+	 */
+	private static function detect_system_control_active_plugin() {
 		$active = (array) get_option( 'active_plugins', [] );
-		$bad    = [];
+		$found  = [];
 		foreach ( $active as $slug ) {
 			if ( strpos( $slug, 'system-control' ) !== false ) {
-				$bad[] = $slug;
+				$found[] = [
+					'plugin' => $slug,
+					'result' => 'detected — deactivate it manually from the Plugins screen',
+				];
 			}
 		}
-		if ( ! empty( $bad ) ) {
-			if ( ! function_exists( 'deactivate_plugins' ) ) {
-				require_once ABSPATH . 'wp-admin/includes/plugin.php';
-			}
-			// Use the official WordPress API so deactivation hooks fire correctly.
-			deactivate_plugins( $bad, true );
-			return [ 'deactivated' => $bad ];
-		}
-		return [ 'deactivated' => [] ];
+		return $found;
 	}
 }

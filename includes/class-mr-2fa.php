@@ -363,7 +363,6 @@ class Malroot_TwoFactor {
 			self::show_2fa_error( __( 'Security check failed (no nonce). Please try again.', 'malroot-security' ) );
 			return;
 		}
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST[ self::NONCE_FIELD ] ) ), 'malroot_2fa_login' ) ) {
 			self::show_2fa_error( __( 'Security check failed (nonce invalid). Please log in again.', 'malroot-security' ) );
 			return;
