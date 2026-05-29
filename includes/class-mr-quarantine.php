@@ -25,17 +25,21 @@ class Malroot_Quarantine {
 	}
 
 	public static function dir() {
-		$dir = WP_CONTENT_DIR . '/uploads/malroot-quarantine';
+		$uploads = wp_upload_dir();
+		$base    = isset( $uploads['basedir'] ) ? $uploads['basedir'] : WP_CONTENT_DIR . '/uploads';
+		$dir     = $base . '/malroot-security/quarantine';
 		if ( ! is_dir( $dir ) ) {
 			wp_mkdir_p( $dir );
 		}
 		// Block HTTP access to anything stored here.
 		$htaccess = $dir . '/.htaccess';
 		if ( ! file_exists( $htaccess ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 			file_put_contents( $htaccess, "Require all denied\nOptions -Indexes\n" );
 		}
 		$index = $dir . '/index.php';
 		if ( ! file_exists( $index ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 			file_put_contents( $index, "<?php // Silence is golden\n" );
 		}
 		return $dir;
@@ -335,7 +339,7 @@ class Malroot_Quarantine {
 				}
 				return new WP_Error( 'restore_failed', sprintf(
 					/* translators: %s: file path */
-					__( 'Could not restore %s — filesystem permission issue. Use your hosting file manager to move the file back manually from wp-content/uploads/malroot-quarantine/.', 'malroot-security' ),
+					__( 'Could not restore %s — filesystem permission issue. Use your hosting file manager to move the file back manually from wp-content/uploads/malroot-security/quarantine/.', 'malroot-security' ),
 					esc_html( $row->target )
 				) );
 				break;

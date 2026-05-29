@@ -68,7 +68,9 @@ class Malroot_Admin {
 
 	public static function menu() {
 		$cap = 'manage_options';
-		add_menu_page( __( 'Malroot Security', 'malroot-security' ), __( 'Malroot', 'malroot-security' ), $cap, 'malroot-security', [ __CLASS__, 'render_dashboard' ], 'dashicons-shield-alt', 3 );
+		// Position 80 puts the menu near the bottom of the admin sidebar (after Settings)
+		// to avoid disrupting the standard WordPress admin hierarchy.
+		add_menu_page( __( 'Malroot Security', 'malroot-security' ), __( 'Malroot', 'malroot-security' ), $cap, 'malroot-security', [ __CLASS__, 'render_dashboard' ], 'dashicons-shield-alt', 80 );
 		add_submenu_page( 'malroot-security', __( 'Findings', 'malroot-security' ),     __( 'Findings', 'malroot-security' ),     $cap, 'malroot-security',             [ __CLASS__, 'render_dashboard' ] );
 		add_submenu_page( 'malroot-security', __( 'Quarantine', 'malroot-security' ),   __( 'Quarantine', 'malroot-security' ),   $cap, 'malroot-quarantine',           [ __CLASS__, 'render_quarantine' ] );
 		add_submenu_page( 'malroot-security', __( 'Connections', 'malroot-security' ),  __( 'Connections', 'malroot-security' ),  $cap, 'malroot-connections',          [ __CLASS__, 'render_connections' ] );

@@ -111,6 +111,14 @@ class Malroot_TwoFactor {
 		$url     = Malroot_TOTP::otpauth_url( $secret, $account, $issuer );
 		$qr_src  = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . rawurlencode( $url );
 
+		// Enqueue the small JS that moves the setup card out of the profile <form>.
+		wp_register_script( 'malroot-2fa-setup', false, [], MALROOT_VERSION, true );
+		wp_enqueue_script( 'malroot-2fa-setup' );
+		wp_add_inline_script(
+			'malroot-2fa-setup',
+			"(function(){var card=document.getElementById('malroot-2fa-setup');if(!card)return;var p=document.getElementById('your-profile');if(p&&p.parentNode){p.parentNode.insertBefore(card,p.nextSibling);}card.scrollIntoView({behavior:'smooth',block:'start'});}());"
+		);
+
 		// The verify form MUST be outside the WP profile <form>.
 		// We render it via admin_footer so it appears after the profile form closes.
 		add_action( 'admin_footer', function () use ( $user, $secret, $codes, $qr_src ) {
@@ -147,20 +155,6 @@ class Malroot_TwoFactor {
 					<pre style="background:#f6f7f7;padding:10px;border-radius:3px;font-size:13px;letter-spacing:2px;margin:0;column-count:2"><?php echo esc_html( implode( "\n", $codes ) ); ?></pre>
 				</div>
 			</div>
-			<script>
-			(function () {
-				// Move the setup card to be a sibling of the profile form, not inside it.
-				// This ensures the verify form submits to admin-post.php correctly.
-				var card = document.getElementById('malroot-2fa-setup');
-				if (!card) return;
-				var profileForm = document.getElementById('your-profile');
-				if (profileForm && profileForm.parentNode) {
-					profileForm.parentNode.insertBefore(card, profileForm.nextSibling);
-				}
-				// Scroll to it
-				card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-			}());
-			</script>
 			<?php
 		} );
 
@@ -312,12 +306,17 @@ class Malroot_TwoFactor {
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$redirect_to = esc_url_raw( isset( $_GET['redirect_to'] ) ? wp_unslash( $_GET['redirect_to'] ) : admin_url() );
+
+		// Enqueue the login-page CSS via the standard handle.
+		wp_register_style( 'malroot-2fa-login', false, [], MALROOT_VERSION );
+		wp_enqueue_style( 'malroot-2fa-login' );
+		wp_add_inline_style(
+			'malroot-2fa-login',
+			'#loginform{max-width:340px}.malroot-2fa-code{font-size:24px;letter-spacing:8px;text-align:center;width:100%;padding:10px}'
+		);
+
 		login_header( __( 'Two-Factor Authentication', 'malroot-security' ) );
 		?>
-		<style>
-		#loginform { max-width: 340px; }
-		.malroot-2fa-code { font-size:24px; letter-spacing:8px; text-align:center; width:100%; padding:10px; }
-		</style>
 		<form method="post" id="loginform" action="<?php echo esc_url( wp_login_url() ); ?>">
 			<p style="margin-bottom:1.2em;color:#555;line-height:1.5">
 				<?php esc_html_e( 'Enter the 6-digit code from your authenticator app, or one of your recovery codes.', 'malroot-security' ); ?>
@@ -365,7 +364,7 @@ class Malroot_TwoFactor {
 			return;
 		}
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		if ( ! wp_verify_nonce( wp_unslash( $_POST[ self::NONCE_FIELD ] ), 'malroot_2fa_login' ) ) {
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST[ self::NONCE_FIELD ] ) ), 'malroot_2fa_login' ) ) {
 			self::show_2fa_error( __( 'Security check failed (nonce invalid). Please log in again.', 'malroot-security' ) );
 			return;
 		}

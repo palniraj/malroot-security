@@ -143,7 +143,7 @@ class Malroot_Baseline {
 			$path = $f->getPathname();
 
 			if ( strpos( $path, '/_QUARANTINE_' ) !== false ) continue;
-			if ( strpos( $path, '/wp-content/uploads/malroot-quarantine/' ) !== false ) continue;
+			if ( strpos( $path, '/uploads/malroot-security/' ) !== false ) continue;
 			if ( strpos( $path, '/wp-content/uploads/' ) !== false ) continue; // user-supplied content; too noisy
 			if ( strpos( $path, '/wp-content/cache/' ) !== false ) continue;
 			if ( strpos( $path, '/wp-content/wflogs/' ) !== false ) continue;

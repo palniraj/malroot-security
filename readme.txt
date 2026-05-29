@@ -4,7 +4,7 @@ Tags: security, malware, scanner, backdoor, firewall
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -91,19 +91,35 @@ Standard TOTP (RFC 6238). Each user enables 2FA from their profile, scans a QR c
 
 = Does Malroot send my data anywhere? =
 
-Malroot makes outbound requests only to:
-
-* `api.wordpress.org` for WordPress core checksums
-* `downloads.wordpress.org` for plugin checksums
-* `ipapi.co` for GeoIP lookups (with 30-day caching per IP)
-* `api.qrserver.com` to render the 2FA QR code (PNG image only)
-* Your configured Slack webhook, if you set one
-
-No site content, credentials, or scan results are sent to any third party.
+Malroot makes outbound requests only to the services described in the "External services" section below. No site content, credentials, or scan results are sent to any third party.
 
 = Does the plugin work on multisite? =
 
 Single-site only in v1.0. Multisite support is on the roadmap.
+
+== External services ==
+
+This plugin connects to the following external services. Each is documented below with what is sent, when, and why.
+
+**WordPress.org core checksums API** (`api.wordpress.org`)
+Used to verify whether changed core files match official WordPress release checksums. The plugin sends only the WordPress version string and locale (e.g. `6.5.4` / `en_US`) to fetch the public checksum manifest. No site content is sent. This is the same API WordPress core uses for its built-in checksum tool.
+Provider: WordPress Foundation. Privacy policy: https://wordpress.org/about/privacy/. Terms: https://wordpress.org/about/
+
+**WordPress.org plugin checksums** (`downloads.wordpress.org`)
+Used to verify whether changed plugin files match the checksums of the version installed from the WordPress.org plugin directory. The plugin sends the plugin slug and version to fetch the public checksum manifest. No site content is sent.
+Provider: WordPress Foundation. Privacy policy: https://wordpress.org/about/privacy/. Terms: https://wordpress.org/about/
+
+**ipapi.co GeoIP lookup** (`ipapi.co`)
+Used to display a human-readable country and city for IP addresses recorded on the Login Activity page. The plugin sends only the IP address being looked up. Results are cached locally for 30 days so each unique IP is queried at most once per month. Lookups happen only when an administrator opens the Login Activity admin page, never during normal site traffic. This service is optional — if the API is unreachable, login records still display the raw IP.
+Provider: ipapi. Privacy policy: https://ipapi.co/privacy/. Terms: https://ipapi.co/terms/
+
+**QR Server QR-code image** (`api.qrserver.com`)
+Used to render the QR code shown when a user enables Two-Factor Authentication on their profile. The plugin sends only an `otpauth://` URL containing the user's TOTP secret, the site name, and the user login. The image is requested only when an administrator clicks "Enable 2FA" on their own profile. Users who do not want to use this service can read the secret string displayed below the QR code and type it manually into their authenticator app instead — the QR is purely a convenience.
+Provider: GoQR.me. Privacy policy: https://goqr.me/privacy/. Terms: https://goqr.me/api/
+
+**Slack incoming webhook** (URL configured by the site administrator, optional)
+If the site administrator enters a Slack incoming webhook URL on the Settings page, critical and high-severity alerts are POSTed to that URL as a short notification payload (event type, severity, summary, and site host). No site content, credentials, or scan results are sent. This service is opt-in and only active when a webhook URL has been configured.
+Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy. Terms: https://slack.com/terms-of-service
 
 == Screenshots ==
 
@@ -116,6 +132,15 @@ Single-site only in v1.0. Multisite support is on the roadmap.
 
 == Changelog ==
 
+= 1.0.2 =
+* Added an "External services" section to readme documenting every outbound request the plugin makes and linking to each provider's privacy policy and terms.
+* Replaced inline `<style>` and `<script>` blocks on the 2FA login and setup screens with `wp_register_style` / `wp_register_script` and `wp_add_inline_style` / `wp_add_inline_script`.
+* Quarantine directory moved to `wp_upload_dir()['basedir'] . '/malroot-security/quarantine'` instead of a hardcoded `WP_CONTENT_DIR` path.
+* Incident-response cleanup now uses the official `deactivate_plugins()` API instead of writing directly to the `active_plugins` option.
+* Admin top-level menu repositioned from position 3 to 80 to integrate cleanly with the standard WordPress admin hierarchy.
+* `wp_verify_nonce()` calls now run their input through `sanitize_text_field( wp_unslash() )` for defence-in-depth (the function is pluggable).
+* `$_SERVER` array values are sanitised before being passed to `explode()`.
+
 = 1.0.0 =
 * First public release.
 * Auto-accept of files matching official WordPress.org and plugin checksums.
@@ -126,6 +151,9 @@ Single-site only in v1.0. Multisite support is on the roadmap.
 * CSV export, "Ignore finding" workflow, and self-integrity check.
 
 == Upgrade Notice ==
+
+= 1.0.2 =
+Documents external services in the readme; refactors inline JS/CSS to use proper enqueue functions; moves the quarantine folder under `uploads/malroot-security/`.
 
 = 1.0.0 =
 First public release.

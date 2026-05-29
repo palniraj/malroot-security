@@ -223,13 +223,20 @@ class Malroot_Incident_Response {
 
 	private static function strip_system_control_active_plugin() {
 		$active = (array) get_option( 'active_plugins', [] );
-		$keep = array_filter( $active, function( $slug ) {
-			return strpos( $slug, 'system-control' ) === false;
-		} );
-		if ( count( $keep ) !== count( $active ) ) {
-			update_option( 'active_plugins', array_values( $keep ) );
-			return [ 'removed_from_active' => true ];
+		$bad    = [];
+		foreach ( $active as $slug ) {
+			if ( strpos( $slug, 'system-control' ) !== false ) {
+				$bad[] = $slug;
+			}
 		}
-		return [ 'removed_from_active' => false ];
+		if ( ! empty( $bad ) ) {
+			if ( ! function_exists( 'deactivate_plugins' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+			// Use the official WordPress API so deactivation hooks fire correctly.
+			deactivate_plugins( $bad, true );
+			return [ 'deactivated' => $bad ];
+		}
+		return [ 'deactivated' => [] ];
 	}
 }

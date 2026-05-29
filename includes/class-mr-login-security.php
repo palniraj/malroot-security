@@ -219,20 +219,17 @@ class Malroot_Login_Security {
 
 	private static function ip() {
 		if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
-			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
-			$first = explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0];
-			return sanitize_text_field( wp_unslash( trim( $first ) ) );
+			$xff   = sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) );
+			$first = explode( ',', $xff )[0];
+			return trim( $first );
 		}
 		if ( ! empty( $_SERVER['HTTP_X_REAL_IP'] ) ) {
-			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 			return sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_REAL_IP'] ) );
 		}
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
 	}
 
 	private static function ua() {
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 		return isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 	}
 }
