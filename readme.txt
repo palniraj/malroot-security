@@ -4,7 +4,7 @@ Tags: security, malware, scanner, backdoor, firewall
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -132,6 +132,16 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 
 == Changelog ==
 
+= 1.0.3 =
+* New Admin Guard module: enforces an allowlist of approved administrators on every request. Catches rogue admins injected directly into the database by a MySQL trigger or SQL backdoor (e.g. `wp_feed`, `newsfood`, and duplicate `wppanel` accounts) — accounts that bypass every normal WordPress creation hook and that a login-name blocklist can never keep up with. Unapproved admins are demoted and signed out automatically, and the last approved administrator is never removed.
+* Admin Guard allowlist is seeded automatically from the current clean administrators on first run; admins created by an approved admin through wp-admin are approved automatically.
+* Redesigned the Incident Response screen in plain language: a clear "what will happen" card with friendly per-step descriptions, a reassurance banner linking to Quarantine, a "when should I run this?" help section, and a readable last-run summary with a threat count.
+* Fixed the Incident Response last-run report rendering as unstyled text (the markup used `malroot-ir-*` class names while the stylesheet defined `mr-ir-*`).
+* REST scanner: added the official `mailchimp-for-woocommerce/` namespace to the known-safe allowlist (fixes a false-positive RT-001 critical on the Mailchimp for WooCommerce plugin's `sync` routes).
+* Expanded the built-in rogue-admin name list (`wp_feed`, `newsfood`, `wppanel`) used by the real-time and login-security blocklists as a secondary layer.
+* Annotated four Plugin Check `WriteFile.ABSPATHDetected` warnings in the quarantine module. These writes intentionally target a file at its real webroot location — neutralising a malware file in place, and restoring a quarantined file to its original path — so they cannot use `wp_upload_dir()`. Each is now documented with a sniff-specific `phpcs:ignore` and a justification.
+* Annotated five Plugin Check `SlowDBQuery` (meta_key/meta_value) warnings in the incident-response and quarantine modules. None is a slow `WP_Query` meta lookup — one is a plain report-array key, and the database operations are INSERT/DELETE on the already-indexed `meta_key` column — so each is documented with a sniff-specific `phpcs:ignore` and a justification.
+
 = 1.0.2 =
 * Added an "External services" section to readme documenting every outbound request the plugin makes and linking to each provider's privacy policy and terms.
 * Replaced inline `<style>` and `<script>` blocks on the 2FA login and setup screens with `wp_register_style` / `wp_register_script` and `wp_add_inline_style` / `wp_add_inline_script`.
@@ -151,6 +161,9 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 * CSV export, "Ignore finding" workflow, and self-integrity check.
 
 == Upgrade Notice ==
+
+= 1.0.3 =
+Adds Admin Guard, which stops database-injected rogue administrators (MySQL trigger / SQL backdoors) by enforcing an approved-admin allowlist on every request. Fixes a Mailchimp for WooCommerce REST false positive.
 
 = 1.0.2 =
 Documents external services in the readme; refactors inline JS/CSS to use proper enqueue functions; moves the quarantine folder under `uploads/malroot-security/`.

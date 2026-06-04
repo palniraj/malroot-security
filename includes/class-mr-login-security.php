@@ -41,7 +41,7 @@ class Malroot_Login_Security {
 	}
 
 	private static function get_blocked_logins() {
-		$defaults = [ 'newsfeed', 'system_control', 'system-control', 'wpadmin', 'wordpress_administrator', 'wp_admin', 'acfmain', 'defino' ];
+		$defaults = [ 'newsfeed', 'newsfood', 'wp_feed', 'wppanel', 'wp-panel', 'system_control', 'system-control', 'wpadmin', 'wordpress_administrator', 'wp_admin', 'acfmain', 'defino' ];
 		$custom   = (array) get_option( 'malroot_blocked_logins', [] );
 		return array_unique( array_merge( $defaults, $custom ) );
 	}

@@ -102,6 +102,8 @@ class Malroot_Loader {
 				'realtime_block_admin'   => 1,
 				'realtime_scan_options'  => 1,
 				'auto_quarantine_critical' => 0,
+				'admin_guard'              => 1,
+				'admin_guard_autoremediate' => 1,
 				'alert_email'            => get_option( 'admin_email' ),
 				'slack_webhook'          => '',
 				'scheduled_scans'        => 1,
@@ -124,6 +126,7 @@ class Malroot_Loader {
 
 	public static function init() {
 		Malroot_Realtime::register();
+		Malroot_Admin_Guard::register();
 		Malroot_Login_Security::register();
 		Malroot_Spam_Shield::register();
 		Malroot_Ajax::register();

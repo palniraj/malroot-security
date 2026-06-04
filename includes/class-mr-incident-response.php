@@ -191,6 +191,7 @@ class Malroot_Incident_Response {
 			if ( $count === 0 ) continue;
 			$finding_id = self::synthesise_postmeta_finding( $key );
 			$res = Malroot_Quarantine::quarantine_finding( $finding_id );
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- 'meta_key' is a plain report-array key here, not a database meta query.
 			$removed[] = [ 'meta_key' => $key, 'count' => $count, 'result' => is_wp_error( $res ) ? $res->get_error_message() : 'removed' ];
 		}
 		return $removed;
@@ -216,7 +217,7 @@ class Malroot_Incident_Response {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key = 'session_tokens'" );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- deleting by the indexed meta_key column; not a WP_Query meta_value lookup.
 		$wpdb->delete( $wpdb->usermeta, [ 'meta_key' => 'session_tokens' ], [ '%s' ] );
 		return [ 'rows_cleared' => $count, 'note' => 'all users will need to re-login' ];
 	}

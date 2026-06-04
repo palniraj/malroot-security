@@ -12,7 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 class Malroot_Realtime {
 
 	private static $blocked_logins = [
-		'newsfeed', 'system_control', 'system-control', 'wpadmin',
+		'newsfeed', 'newsfood', 'wp_feed', 'wppanel', 'wp-panel',
+		'system_control', 'system-control', 'wpadmin',
 		'wordpress_administrator', 'wp_admin', 'acfmain', 'defino',
 	];
 
@@ -93,7 +94,7 @@ class Malroot_Realtime {
 
 	public static function block_bad_login( $login ) {
 		$blocked = array_merge(
-			[ 'newsfeed', 'system_control', 'system-control', 'wpadmin', 'wordpress_administrator', 'wp_admin', 'acfmain', 'defino' ],
+			[ 'newsfeed', 'newsfood', 'wp_feed', 'wppanel', 'wp-panel', 'system_control', 'system-control', 'wpadmin', 'wordpress_administrator', 'wp_admin', 'acfmain', 'defino' ],
 			(array) get_option( 'malroot_blocked_logins', [] )
 		);
 		if ( in_array( strtolower( (string) $login ), array_map( 'strtolower', $blocked ), true ) ) {

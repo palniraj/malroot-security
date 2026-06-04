@@ -214,26 +214,109 @@
 	background:#fff; border:1px solid #e0e0e0; border-radius:8px;
 	overflow:hidden; margin-top:16px;
 }
+
+/* Run card --------------------------------------------------*/
+.mr-ir-run-card {
+	background:#fff; border:1px solid #e0e0e0; border-radius:10px;
+	padding:24px; margin:20px 0; box-shadow:0 1px 3px rgba(0,0,0,.06);
+	border-top:4px solid #dc3232;
+}
+.mr-ir-run-head { display:flex; align-items:flex-start; gap:14px; margin-bottom:18px; }
+.mr-ir-run-icon { font-size:34px; line-height:1; }
+.mr-ir-run-title { margin:2px 0 2px; font-size:18px; font-weight:700; color:#1d2327; }
+.mr-ir-run-sub { margin:0; color:#666; font-size:13px; }
+
+.mr-ir-steps-grid {
+	display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+	gap:12px; margin-bottom:18px;
+}
+.mr-ir-step-card {
+	display:flex; align-items:flex-start; gap:12px;
+	background:#f9fafb; border:1px solid #eef0f1; border-radius:8px;
+	padding:14px 16px;
+}
+.mr-ir-step-icon { font-size:22px; line-height:1.2; flex-shrink:0; }
+.mr-ir-step-name { font-size:13px; font-weight:600; color:#1d2327; margin-bottom:3px; }
+.mr-ir-step-desc { font-size:12px; color:#666; line-height:1.5; }
+
+.mr-ir-reassure {
+	display:flex; align-items:center; gap:10px;
+	background:#ecf7ed; border:1px solid #b7e0bb; border-radius:8px;
+	padding:12px 16px; font-size:13px; color:#1e4620; margin-bottom:20px;
+}
+.mr-ir-reassure .dashicons { color:#46b450; flex-shrink:0; }
+.mr-ir-reassure a { color:#135e96; font-weight:600; }
+
+.mr-ir-run-form { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.mr-ir-run-form .button-hero { display:inline-flex; align-items:center; }
+.mr-ir-run-note { font-size:12px; color:#888; }
+
+/* When-to-use disclosure ------------------------------------*/
+.mr-ir-help {
+	background:#fff; border:1px solid #e0e0e0; border-radius:8px;
+	padding:14px 18px; margin-bottom:8px;
+}
+.mr-ir-help summary {
+	cursor:pointer; font-size:13px; font-weight:600; color:#2271b1;
+	list-style:none;
+}
+.mr-ir-help summary::-webkit-details-marker { display:none; }
+.mr-ir-help summary::before { content:"\2753"; margin-right:8px; }
+.mr-ir-help p { margin:12px 0 2px; font-size:13px; color:#555; line-height:1.6; }
+
+/* Summary banner --------------------------------------------*/
+.mr-ir-summary-banner {
+	display:flex; align-items:center; gap:14px;
+	border-radius:8px; padding:16px 20px; margin:8px 0 0;
+}
+.mr-ir-summary-banner.clean { background:#ecf7ed; border:1px solid #b7e0bb; }
+.mr-ir-summary-banner.has-actions { background:#fff8e1; border:1px solid #ffe082; }
+.mr-ir-summary-icon { font-size:30px; line-height:1; }
+.mr-ir-summary-headline { font-size:16px; font-weight:700; color:#1d2327; }
+.mr-ir-summary-time { font-size:12px; color:#777; margin-top:2px; }
+
 .mr-ir-section { border-bottom:1px solid #f0f0f1; }
 .mr-ir-section:last-child { border-bottom:none; }
 .mr-ir-section-header {
-	display:flex; align-items:center; gap:8px;
+	display:flex; align-items:center; gap:10px;
 	padding:12px 16px; background:#f6f7f7;
-	font-size:13px; font-weight:600; text-transform:capitalize;
+	font-size:13px; font-weight:600;
+}
+.mr-ir-section-emoji { font-size:16px; line-height:1; }
+.mr-ir-section-title { flex:1; color:#1d2327; }
+.mr-ir-count-badge {
+	background:#dc3232; color:#fff; font-size:11px; font-weight:700;
+	min-width:20px; text-align:center; padding:2px 7px; border-radius:11px;
+}
+.mr-ir-clean-badge {
+	background:#46b450; color:#fff; font-size:10px; font-weight:700;
+	text-transform:uppercase; letter-spacing:.4px; padding:2px 8px; border-radius:11px;
 }
 .mr-ir-items { padding:0 16px 8px; }
 .mr-ir-item {
 	display:flex; align-items:center; gap:10px;
-	padding:8px 0; border-bottom:1px solid #f6f7f7; font-size:13px;
+	padding:9px 0; border-bottom:1px solid #f6f7f7; font-size:13px;
 }
 .mr-ir-item:last-child { border-bottom:none; }
-.mr-ir-ok   { color:#46b450; font-weight:700; font-size:14px; }
-.mr-ir-skip { color:#bbb; font-size:14px; }
-.mr-ir-err  { color:#dc3232; font-weight:700; font-size:14px; }
-.mr-ir-label { font-weight:500; flex:1; }
-.mr-ir-result { color:#888; font-size:12px; }
+.mr-ir-ok {
+	color:#fff; background:#46b450; font-weight:700; font-size:11px;
+	width:18px; height:18px; border-radius:50%; display:inline-flex;
+	align-items:center; justify-content:center; flex-shrink:0;
+}
+.mr-ir-skip {
+	color:#fff; background:#f0b849; font-weight:700; font-size:12px;
+	width:18px; height:18px; border-radius:50%; display:inline-flex;
+	align-items:center; justify-content:center; flex-shrink:0;
+}
+.mr-ir-err {
+	color:#fff; background:#dc3232; font-weight:700; font-size:11px;
+	width:18px; height:18px; border-radius:50%; display:inline-flex;
+	align-items:center; justify-content:center; flex-shrink:0;
+}
+.mr-ir-label { font-weight:600; flex:1; color:#1d2327; word-break:break-all; }
+.mr-ir-result { color:#777; font-size:12px; }
 .mr-ir-meta { font-size:11px; color:#aaa; }
-.mr-ir-timestamp { font-size:11px; color:#aaa; padding:10px 16px; }
+.mr-ir-timestamp { font-size:11px; color:#aaa; padding:10px 16px; background:#fafafa; }
 
 /* ---- Settings -------------------------------------------- */
 .mr-settings-section {

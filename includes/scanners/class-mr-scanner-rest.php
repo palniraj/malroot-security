@@ -43,6 +43,7 @@ class Malroot_Scanner_REST extends Malroot_Scanner_Base {
 		'google-site-kit/',
 		'mailchimp/',
 		'mailchimp-for-wc/',
+		'mailchimp-for-woocommerce/', // official "Mailchimp for WooCommerce" plugin slug (namespace mailchimp-for-woocommerce/v1)
 		'mailpoet/',
 		'contact-form-7/',
 		'wpforms/',

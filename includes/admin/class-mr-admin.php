@@ -123,6 +123,8 @@ class Malroot_Admin {
 			'realtime_block_admin'     => empty( $_POST['realtime_block_admin'] ) ? 0 : 1,
 			'realtime_scan_options'    => empty( $_POST['realtime_scan_options'] ) ? 0 : 1,
 			'auto_quarantine_critical' => empty( $_POST['auto_quarantine_critical'] ) ? 0 : 1,
+			'admin_guard'              => empty( $_POST['admin_guard'] ) ? 0 : 1,
+			'admin_guard_autoremediate' => empty( $_POST['admin_guard_autoremediate'] ) ? 0 : 1,
 			'monitor_outbound'         => empty( $_POST['monitor_outbound'] ) ? 0 : 1,
 			'scheduled_scans'          => empty( $_POST['scheduled_scans'] ) ? 0 : 1,
 			'require_2fa_admins'       => empty( $_POST['require_2fa_admins'] ) ? 0 : 1,
@@ -742,6 +744,39 @@ class Malroot_Admin {
 				<?php wp_nonce_field( 'malroot_save_settings' ); ?>
 
 				<div class="mr-settings-section">
+					<div class="mr-settings-section-header"><?php esc_html_e( 'Admin Guard (allowlist enforcement)', 'malroot-security' ); ?></div>
+					<table class="form-table">
+						<tr><th><?php esc_html_e( 'Enforce administrator allowlist', 'malroot-security' ); ?></th>
+							<td><label><input type="checkbox" name="admin_guard" value="1" <?php checked( Malroot_Admin_Guard::is_enabled() ); ?>>
+								<?php esc_html_e( 'On every request, any administrator who is not on the approved allowlist is treated as rogue. This catches accounts injected directly into the database by a MySQL trigger or SQL backdoor — which bypass every normal WordPress hook.', 'malroot-security' ); ?></label>
+							</td></tr>
+						<tr><th><?php esc_html_e( 'Auto-remediate', 'malroot-security' ); ?></th>
+							<td><label><input type="checkbox" name="admin_guard_autoremediate" value="1" <?php checked( Malroot_Admin_Guard::autoremediate() ); ?>>
+								<?php esc_html_e( 'Automatically demote and sign out an unapproved administrator the moment it is seen. The last approved administrator is never removed. Turn this off to alert only.', 'malroot-security' ); ?></label>
+							</td></tr>
+						<tr><th><?php esc_html_e( 'Approved administrators', 'malroot-security' ); ?></th>
+							<td>
+								<?php
+								$approved_ids = array_map( 'intval', (array) get_option( Malroot_Admin_Guard::APPROVED_IDS_OPT, [] ) );
+								if ( empty( $approved_ids ) ) {
+									echo '<p class="description">' . esc_html__( 'Not seeded yet. On the next front-end or admin request, Malroot approves the current clean administrators automatically.', 'malroot-security' ) . '</p>';
+								} else {
+									echo '<ul style="margin:0">';
+									foreach ( $approved_ids as $aid ) {
+										$au = get_userdata( $aid );
+										if ( $au ) {
+											echo '<li><code>' . esc_html( $au->user_login ) . '</code> — ' . esc_html( $au->user_email ?: '(no email)' ) . '</li>';
+										}
+									}
+									echo '</ul>';
+								}
+								?>
+								<p class="description"><?php esc_html_e( 'New admins created by an approved admin through wp-admin are added here automatically. Email allowlist is shared with the "Blocked usernames" / Users scanner.', 'malroot-security' ); ?></p>
+							</td></tr>
+					</table>
+				</div>
+
+				<div class="mr-settings-section">
 					<div class="mr-settings-section-header"><?php esc_html_e( 'Real-time Protection', 'malroot-security' ); ?></div>
 					<table class="form-table">
 						<tr><th><?php esc_html_e( 'Admin creation alerts', 'malroot-security' ); ?></th>
@@ -1261,84 +1296,253 @@ class Malroot_Admin {
 		<?php
 	}
 
+	/**
+	 * Plain-language metadata for each incident-response step.
+	 * Keeps the UI friendly without changing what the underlying cleanup does.
+	 */
+	private static function ir_step_meta() {
+		return [
+			'triggers' => [
+				'icon'  => '🪤',
+				'title' => __( 'Hidden database traps', 'malroot-security' ),
+				'desc'  => __( 'Removes secret MySQL triggers that silently recreate fake admins.', 'malroot-security' ),
+				'empty' => __( 'No hidden traps found.', 'malroot-security' ),
+			],
+			'users' => [
+				'icon'  => '👤',
+				'title' => __( 'Fake admin accounts', 'malroot-security' ),
+				'desc'  => __( 'Safely removes accounts with known malware login names.', 'malroot-security' ),
+				'empty' => __( 'No fake accounts found.', 'malroot-security' ),
+			],
+			'options' => [
+				'icon'  => '⚙️',
+				'title' => __( 'Malware settings', 'malroot-security' ),
+				'desc'  => __( 'Clears leftover attacker settings and temporary data.', 'malroot-security' ),
+				'empty' => __( 'No malware settings found.', 'malroot-security' ),
+			],
+			'postmeta' => [
+				'icon'  => '🏷️',
+				'title' => __( 'Bot-cloaking tags', 'malroot-security' ),
+				'desc'  => __( 'Removes tags used to show spam only to search engines.', 'malroot-security' ),
+				'empty' => __( 'No cloaking tags found.', 'malroot-security' ),
+			],
+			'sessions' => [
+				'icon'  => '🔑',
+				'title' => __( 'Active logins', 'malroot-security' ),
+				'desc'  => __( 'Signs everyone out so any stolen session is cut off.', 'malroot-security' ),
+				'empty' => __( 'No active logins to clear.', 'malroot-security' ),
+			],
+			'plugins' => [
+				'icon'  => '🧩',
+				'title' => __( 'Rogue plugin check', 'malroot-security' ),
+				'desc'  => __( 'Looks for the system-control malware plugin and flags it for you.', 'malroot-security' ),
+				'empty' => __( 'No rogue plugin active.', 'malroot-security' ),
+			],
+		];
+	}
+
+	/** Count how many real actions were taken across all steps in a report. */
+	private static function ir_action_count( $report ) {
+		$count = 0;
+		foreach ( (array) ( $report['steps'] ?? [] ) as $items ) {
+			if ( is_array( $items ) ) {
+				$count += count( $items );
+			}
+		}
+		return $count;
+	}
+
 	public static function render_incident() {
 		$last_report = get_transient( 'malroot_last_ir_report' );
+		$steps_meta  = self::ir_step_meta();
 		?>
-		<div class="wrap">
-			<h1><?php esc_html_e( 'Incident Response', 'malroot-security' ); ?></h1>
-			<p><?php esc_html_e( 'One-click runs the cleanup we developed for the system-control / newsfeed attack. Every action is reversible via the Quarantine page.', 'malroot-security' ); ?></p>
+		<div class="wrap malroot-wrap">
+			<h1>
+				<span class="dashicons dashicons-shield-alt" style="color:#dc3232"></span>
+				<?php esc_html_e( 'Incident Response', 'malroot-security' ); ?>
+			</h1>
+			<p class="malroot-tagline">
+				<?php esc_html_e( 'One button runs the complete cleanup we built for the “fake admin” malware attack. It’s safe to run, and everything it does can be undone.', 'malroot-security' ); ?>
+			</p>
 
 			<?php self::flash_messages(); ?>
-			<?php if ( isset( $_GET['mr_ir_done'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Incident response complete. See report below.', 'malroot-security' ); ?></p></div>
+			<?php if ( isset( $_GET['mr_ir_done'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$done_actions = is_array( $last_report ) ? self::ir_action_count( $last_report ) : 0; ?>
+				<div class="notice notice-success is-dismissible"><p>
+					<strong><?php esc_html_e( 'All done.', 'malroot-security' ); ?></strong>
+					<?php
+					if ( $done_actions > 0 ) {
+						printf(
+							/* translators: %d: number of cleanup actions performed */
+							esc_html( _n( 'Cleanup finished — %d action taken. See the summary below.', 'Cleanup finished — %d actions taken. See the summary below.', $done_actions, 'malroot-security' ) ),
+							(int) $done_actions
+						);
+					} else {
+						esc_html_e( 'Cleanup finished — your site was already clean. See the summary below.', 'malroot-security' );
+					}
+					?>
+				</p></div>
 			<?php endif; ?>
 
-			<div style="border:2px solid #dc3232;background:#fef7f7;padding:20px;margin:20px 0">
-				<h2 style="margin-top:0;color:#dc3232"><?php esc_html_e( 'Run Cleanup', 'malroot-security' ); ?></h2>
-				<p><?php esc_html_e( 'This will:', 'malroot-security' ); ?></p>
-				<ul style="list-style:disc;margin-left:20px">
-					<li><?php esc_html_e( 'Drop any MySQL trigger that injects users (e.g. after_insert_comment)', 'malroot-security' ); ?></li>
-					<li><?php esc_html_e( 'Quarantine users with malware login names (newsfeed, system_control, etc.)', 'malroot-security' ); ?></li>
-					<li><?php esc_html_e( 'Quarantine sc_* options + clear sc_ transients', 'malroot-security' ); ?></li>
-					<li><?php esc_html_e( 'Quarantine _sc_bot_only / _sc_bot_type postmeta', 'malroot-security' ); ?></li>
-					<li><?php esc_html_e( 'Clear all session_tokens (forces every user to log in again)', 'malroot-security' ); ?></li>
-					<li><?php esc_html_e( 'Detect system-control in active_plugins and flag it for you to deactivate manually', 'malroot-security' ); ?></li>
-				</ul>
-				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:15px">
+			<!-- ============ Run card ============ -->
+			<div class="mr-ir-run-card">
+				<div class="mr-ir-run-head">
+					<span class="mr-ir-run-icon">🧹</span>
+					<div>
+						<h2 class="mr-ir-run-title"><?php esc_html_e( 'One-click malware cleanup', 'malroot-security' ); ?></h2>
+						<p class="mr-ir-run-sub"><?php esc_html_e( 'Here’s exactly what will happen when you run it:', 'malroot-security' ); ?></p>
+					</div>
+				</div>
+
+				<div class="mr-ir-steps-grid">
+					<?php foreach ( $steps_meta as $meta ) : ?>
+						<div class="mr-ir-step-card">
+							<span class="mr-ir-step-icon"><?php echo esc_html( $meta['icon'] ); ?></span>
+							<div>
+								<div class="mr-ir-step-name"><?php echo esc_html( $meta['title'] ); ?></div>
+								<div class="mr-ir-step-desc"><?php echo esc_html( $meta['desc'] ); ?></div>
+							</div>
+						</div>
+					<?php endforeach; ?>
+				</div>
+
+				<div class="mr-ir-reassure">
+					<span class="dashicons dashicons-backup"></span>
+					<?php
+					printf(
+						/* translators: %s: link to the Quarantine page */
+						wp_kses_post( __( 'Nothing is deleted permanently. Every change is saved to the <a href="%s">Quarantine</a> page, where you can restore it with one click if needed.', 'malroot-security' ) ),
+						esc_url( admin_url( 'admin.php?page=malroot-quarantine' ) )
+					);
+					?>
+				</div>
+
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="mr-ir-run-form">
 					<input type="hidden" name="action" value="malroot_run_incident" />
 					<input type="hidden" name="token" value="<?php echo esc_attr( Malroot_Incident_Response::token() ); ?>" />
 					<?php wp_nonce_field( 'malroot_run_incident' ); ?>
-					<button type="submit" class="button button-primary button-hero" style="background:#dc3232;border-color:#a00;text-shadow:none" onclick="return confirm('Run full incident response now? Every change is reversible from the Quarantine page.')">
-						<?php esc_html_e( 'Run Incident Response', 'malroot-security' ); ?>
+					<button type="submit" class="button button-primary button-hero mr-btn-danger" onclick="return confirm('<?php esc_attr_e( 'Run the full cleanup now? Everyone will be signed out, and every change can be undone from the Quarantine page.', 'malroot-security' ); ?>')">
+						<span class="dashicons dashicons-shield" style="margin:3px 6px 0 0"></span>
+						<?php esc_html_e( 'Run cleanup now', 'malroot-security' ); ?>
 					</button>
+					<span class="mr-ir-run-note"><?php esc_html_e( 'Takes a few seconds. You’ll see a summary right here when it’s done.', 'malroot-security' ); ?></span>
 				</form>
 			</div>
 
-			<?php if ( $last_report && is_array( $last_report ) ) : ?>
-				<h2><?php esc_html_e( 'Last Run Report', 'malroot-security' ); ?></h2>
-				<div class="malroot-ir-report">
-					<?php foreach ( $last_report['steps'] as $step_name => $items ) : ?>
-						<div class="malroot-ir-step">
-							<div class="malroot-ir-step-title"><?php echo esc_html( ucfirst( $step_name ) ); ?></div>
-							<?php if ( empty( $items ) ) : ?>
-								<div class="malroot-ir-item"><span class="malroot-ir-skip">—</span> <?php esc_html_e( 'Nothing to do.', 'malroot-security' ); ?></div>
-							<?php elseif ( is_array( $items ) ) : ?>
-								<?php foreach ( $items as $item ) :
-									if ( ! is_array( $item ) ) {
-										echo '<div class="malroot-ir-item">' . esc_html( wp_json_encode( $item ) ) . '</div>';
-										continue;
-									}
-									$result = $item['result'] ?? '';
-									$label  = $item['user'] ?? $item['option'] ?? $item['meta_key'] ?? $item['name'] ?? $item['plugin'] ?? $item['transients'] ?? '';
-									$icon_class = ( $result === 'quarantined' || $result === 'dropped' || $result === 'removed' || $result === 'cleared' )
-										? 'malroot-ir-ok' : ( strpos( $result, 'skip' ) !== false ? 'malroot-ir-skip' : 'malroot-ir-err' );
-									$icon = ( $icon_class === 'malroot-ir-ok' ) ? '✓' : ( $icon_class === 'malroot-ir-skip' ? '—' : '✗' );
-								?>
-									<div class="malroot-ir-item">
-										<span class="<?php echo esc_attr( $icon_class ); ?>"><?php echo esc_html( $icon ); ?></span>
-										<strong><?php echo esc_html( $label ); ?></strong>
-										<span style="color:#666;font-size:12px"><?php echo esc_html( $result ); ?></span>
-										<?php if ( isset( $item['id'] ) ) : ?>
-											<span style="color:#aaa;font-size:11px">(ID <?php echo (int) $item['id']; ?>)</span>
-										<?php endif; ?>
+			<!-- ============ When to use ============ -->
+			<details class="mr-ir-help">
+				<summary><?php esc_html_e( 'When should I run this?', 'malroot-security' ); ?></summary>
+				<p><?php esc_html_e( 'Run it when a scan reports fake admin accounts, hidden database traps, or the system-control plugin — or any time you suspect the site was hacked. It’s safe to run more than once. After it finishes, change your passwords and ask everyone to log in again.', 'malroot-security' ); ?></p>
+			</details>
+
+			<!-- ============ Last run summary ============ -->
+			<?php if ( $last_report && is_array( $last_report ) ) :
+				$total_actions = self::ir_action_count( $last_report ); ?>
+				<h2 class="mr-section-heading" style="margin-top:28px">
+					<span class="dashicons dashicons-clipboard"></span>
+					<?php esc_html_e( 'Last cleanup summary', 'malroot-security' ); ?>
+				</h2>
+
+				<div class="mr-ir-summary-banner <?php echo $total_actions > 0 ? 'has-actions' : 'clean'; ?>">
+					<span class="mr-ir-summary-icon"><?php echo $total_actions > 0 ? '🧹' : '✅'; ?></span>
+					<div>
+						<div class="mr-ir-summary-headline">
+							<?php
+							if ( $total_actions > 0 ) {
+								printf(
+									/* translators: %d: number of cleanup actions performed */
+									esc_html( _n( '%d threat handled', '%d threats handled', $total_actions, 'malroot-security' ) ),
+									(int) $total_actions
+								);
+							} else {
+								esc_html_e( 'Your site was already clean', 'malroot-security' );
+							}
+							?>
+						</div>
+						<div class="mr-ir-summary-time">
+							<?php
+							printf(
+								/* translators: %s: date/time the cleanup finished */
+								esc_html__( 'Finished %s', 'malroot-security' ),
+								esc_html( $last_report['finished_at'] ?? $last_report['started_at'] ?? '' )
+							);
+							?>
+						</div>
+					</div>
+				</div>
+
+				<div class="mr-ir-report">
+					<?php foreach ( $last_report['steps'] as $step_name => $items ) :
+						$meta  = $steps_meta[ $step_name ] ?? [ 'icon' => '•', 'title' => ucfirst( $step_name ), 'empty' => __( 'Nothing to do.', 'malroot-security' ) ];
+						$count = is_array( $items ) ? count( $items ) : 0;
+					?>
+						<div class="mr-ir-section">
+							<div class="mr-ir-section-header">
+								<span class="mr-ir-section-emoji"><?php echo esc_html( $meta['icon'] ); ?></span>
+								<span class="mr-ir-section-title"><?php echo esc_html( $meta['title'] ); ?></span>
+								<?php if ( $count > 0 ) : ?>
+									<span class="mr-ir-count-badge"><?php echo (int) $count; ?></span>
+								<?php else : ?>
+									<span class="mr-ir-clean-badge"><?php esc_html_e( 'Clear', 'malroot-security' ); ?></span>
+								<?php endif; ?>
+							</div>
+							<div class="mr-ir-items">
+								<?php if ( empty( $items ) || ! is_array( $items ) ) : ?>
+									<div class="mr-ir-item">
+										<span class="mr-ir-skip">—</span>
+										<span class="mr-ir-label" style="color:#888"><?php echo esc_html( $meta['empty'] ); ?></span>
 									</div>
-								<?php endforeach; ?>
-							<?php else : ?>
-								<div class="malroot-ir-item"><?php echo esc_html( wp_json_encode( $items ) ); ?></div>
-							<?php endif; ?>
+								<?php else : ?>
+									<?php foreach ( $items as $item ) :
+										if ( ! is_array( $item ) ) {
+											echo '<div class="mr-ir-item"><span class="mr-ir-label">' . esc_html( wp_json_encode( $item ) ) . '</span></div>';
+											continue;
+										}
+										$result = (string) ( $item['result'] ?? '' );
+										$label  = $item['user'] ?? $item['option'] ?? $item['meta_key'] ?? $item['name'] ?? $item['plugin'] ?? $item['transients'] ?? '';
+										$is_ok   = preg_match( '/quarantined|dropped|removed|cleared/i', $result );
+										$is_skip = stripos( $result, 'skip' ) !== false || stripos( $result, 'detected' ) !== false;
+										$icon_class = $is_ok ? 'mr-ir-ok' : ( $is_skip ? 'mr-ir-skip' : 'mr-ir-err' );
+										$icon       = $is_ok ? '✓' : ( $is_skip ? '!' : '✗' );
+									?>
+										<div class="mr-ir-item">
+											<span class="<?php echo esc_attr( $icon_class ); ?>"><?php echo esc_html( $icon ); ?></span>
+											<span class="mr-ir-label"><?php echo esc_html( $label ); ?></span>
+											<?php if ( $result ) : ?>
+												<span class="mr-ir-result"><?php echo esc_html( self::ir_friendly_result( $result ) ); ?></span>
+											<?php endif; ?>
+											<?php if ( isset( $item['id'] ) ) : ?>
+												<span class="mr-ir-meta">#<?php echo (int) $item['id']; ?></span>
+											<?php endif; ?>
+										</div>
+									<?php endforeach; ?>
+								<?php endif; ?>
+							</div>
 						</div>
 					<?php endforeach; ?>
-					<p style="margin-top:12px;font-size:12px;color:#888">
+					<div class="mr-ir-timestamp">
 						<?php printf(
 							/* translators: %1$s: start time, %2$s: finish time */
-							esc_html__( 'Started: %1$s — Finished: %2$s', 'malroot-security' ),
+							esc_html__( 'Started %1$s · Finished %2$s', 'malroot-security' ),
 							esc_html( $last_report['started_at'] ?? '' ),
 							esc_html( $last_report['finished_at'] ?? '' )
 						); ?>
-					</p>
+					</div>
 				</div>
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/** Turn a raw step result into friendly wording. */
+	private static function ir_friendly_result( $result ) {
+		$map = [
+			'quarantined' => __( 'safely removed (restorable)', 'malroot-security' ),
+			'dropped'     => __( 'removed', 'malroot-security' ),
+			'removed'     => __( 'removed', 'malroot-security' ),
+			'cleared'     => __( 'cleared', 'malroot-security' ),
+		];
+		$key = strtolower( trim( $result ) );
+		return $map[ $key ] ?? $result;
 	}
 }

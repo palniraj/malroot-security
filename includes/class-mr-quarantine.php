@@ -134,6 +134,7 @@ class Malroot_Quarantine {
 		// Fall back to copy + zero-out the original so it can't execute.
 		if ( @copy( $abs, $dest ) ) {
 			// Zero out the original — this neutralises it even if we can't delete it.
+			// phpcs:ignore PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- neutralising a malware file at its real webroot (ABSPATH) location; it cannot be relocated to wp_upload_dir().
 			@file_put_contents( $abs, '<?php // Quarantined by Malroot Security' . "\n" );
 			self::record_log( 'file', $rel_path, [ 'dest' => $dest, 'method' => 'copy+zero', 'original_zeroed' => true ] );
 			return true;
@@ -142,6 +143,7 @@ class Malroot_Quarantine {
 		// Can't copy either — try to at least zero out the file in place.
   // phpcs:ignore WordPress.WP.AlternativeFunctions
 		if ( is_writable( $abs ) ) {
+			// phpcs:ignore PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- neutralising a malware file at its real webroot (ABSPATH) location; it cannot be relocated to wp_upload_dir().
 			@file_put_contents( $abs, '<?php // Quarantined by Malroot Security' . "\n" );
 			self::record_log( 'file', $rel_path, [ 'dest' => $abs, 'method' => 'zeroed_in_place' ] );
 			return true;
@@ -179,7 +181,7 @@ class Malroot_Quarantine {
 			$meta_key
 		), ARRAY_A );
 		self::record_log( 'postmeta', $meta_key, [ 'rows' => $rows ] );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- deleting by the indexed meta_key column; not a WP_Query meta_value lookup.
 		$wpdb->delete( $wpdb->postmeta, [ 'meta_key' => $meta_key ], [ '%s' ] );
 		return true;
 	}
@@ -328,11 +330,12 @@ class Malroot_Quarantine {
 				wp_mkdir_p( dirname( $abs ) );
 
 				// Try rename first
-    // phpcs:ignore WordPress.WP.AlternativeFunctions
+    // phpcs:ignore WordPress.WP.AlternativeFunctions, PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- restoring a previously quarantined file to its original webroot (ABSPATH) location, as chosen by the operator.
 				if ( @rename( $payload['dest'], $abs ) ) {
 					break;
 				}
 				// Fall back to copy (cross-owner filesystem)
+				// phpcs:ignore WordPress.WP.AlternativeFunctions, PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- restoring a previously quarantined file to its original webroot (ABSPATH) location, as chosen by the operator.
 				if ( @copy( $payload['dest'], $abs ) ) {
 					wp_delete_file( $payload['dest'] );
 					break;
@@ -350,11 +353,11 @@ class Malroot_Quarantine {
 
 			case 'postmeta':
 				foreach ( (array) ( $payload['rows'] ?? [] ) as $r ) {
-					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- restoring previously quarantined rows.
 					$wpdb->insert( $wpdb->postmeta, [
 						'post_id'    => (int) $r['post_id'],
-						'meta_key'   => $row->target,
-						'meta_value' => $r['meta_value'],
+						'meta_key'   => $row->target, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- INSERT column name, not a WP_Query meta lookup.
+						'meta_value' => $r['meta_value'], // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- INSERT column name, not a WP_Query meta lookup.
 					], [ '%d', '%s', '%s' ] );
 				}
 				break;
