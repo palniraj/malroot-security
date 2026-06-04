@@ -52,7 +52,7 @@ class Malroot_Admin {
 				'findings'      => __( 'Findings', 'malroot-security' ),
 				'snapshotting'  => __( 'Taking snapshot…', 'malroot-security' ),
 				'updateSnapshot'=> __( 'Update Snapshot', 'malroot-security' ),
-    /* translators: %s is replaced with dynamic content */
+				/* translators: %d: number of files in the security snapshot */
 				'snapshotDone'  => __( 'Snapshot updated (%d files). Running a fresh scan…', 'malroot-security' ),
 				'stepFiles'     => __( 'Scanning files…', 'malroot-security' ),
 				'stepDatabase'  => __( 'Scanning database…', 'malroot-security' ),
@@ -62,6 +62,13 @@ class Malroot_Admin {
 				'stepMuPlugins' => __( 'Checking mu-plugins…', 'malroot-security' ),
 				'stepBotCloak'  => __( 'Bot-cloak check…', 'malroot-security' ),
 				'stepIntegrity' => __( 'File integrity check…', 'malroot-security' ),
+				'removing'      => __( 'Removing…', 'malroot-security' ),
+				'removed'       => __( 'Removed', 'malroot-security' ),
+				'removeFailed'  => __( 'Could not remove. Try again or use your hosting file manager.', 'malroot-security' ),
+				'confirmBulk'   => __( 'Remove all these items now? Each one is backed up to Quarantine and can be restored.', 'malroot-security' ),
+				'bulkDone'      => __( 'Cleanup complete.', 'malroot-security' ),
+				/* translators: %1$d: current item number, %2$d: total number of items */
+				'bulkProgress'  => __( 'Removing %1$d of %2$d…', 'malroot-security' ),
 			],
 		] );
 	}
@@ -264,8 +271,49 @@ class Malroot_Admin {
 			$review  = array_filter( $real_threats, fn( $f ) => in_array( $f->severity, [ 'medium', 'low' ], true ) );
 
 			if ( $urgent ) {
+				// Count how many urgent findings can actually be auto-removed
+				// (REST routes need manual action and aren't bulk-removable).
+				$bulk_ids = [];
+				foreach ( $urgent as $f ) {
+					if ( strpos( $f->target, 'rest:' ) !== 0 ) {
+						$bulk_ids[] = (int) $f->id;
+					}
+				}
+
 				echo '<h2 style="color:#dc3232;margin-top:24px">🚨 ' . esc_html__( 'Action required', 'malroot-security' ) . ' <span style="font-size:14px;font-weight:normal;color:#666">(' . count( $urgent ) . ')</span></h2>';
-				echo '<p style="color:#555">' . esc_html__( 'These issues need your attention now. Click the button on each card to fix it.', 'malroot-security' ) . '</p>';
+				echo '<p style="color:#555">' . esc_html__( 'These issues need your attention now. Remove them one at a time, or clean up everything at once.', 'malroot-security' ) . '</p>';
+
+				if ( count( $bulk_ids ) > 1 ) {
+					?>
+					<div class="mr-bulk-bar" data-ids="<?php echo esc_attr( implode( ',', $bulk_ids ) ); ?>" data-nonce="<?php echo esc_attr( wp_create_nonce( 'malroot_quarantine' ) ); ?>">
+						<div class="mr-bulk-info">
+							<span class="dashicons dashicons-shield"></span>
+							<?php
+							printf(
+								/* translators: %d: number of items that can be removed in bulk */
+								esc_html__( '%d items can be removed automatically.', 'malroot-security' ),
+								count( $bulk_ids )
+							);
+							?>
+						</div>
+						<button type="button" class="button button-primary mr-bulk-btn" style="background:#dc3232;border-color:#a00;text-shadow:none">
+							<span class="dashicons dashicons-trash" style="margin:4px 4px 0 0"></span>
+							<?php
+							printf(
+								/* translators: %d: number of items to remove */
+								esc_html__( 'Remove all %d now', 'malroot-security' ),
+								count( $bulk_ids )
+							);
+							?>
+						</button>
+						<div class="mr-bulk-progress" style="display:none">
+							<div class="mr-bulk-progress-bar"><div class="mr-bulk-progress-inner"></div></div>
+							<span class="mr-bulk-progress-text"></span>
+						</div>
+					</div>
+					<?php
+				}
+
 				foreach ( $urgent as $f ) {
 					self::render_plain_card( $f );
 				}
@@ -493,7 +541,7 @@ class Malroot_Admin {
 		];
 		$border_color = $sev_colors[ $f->severity ] ?? '#ccd0d4';
 		?>
-		<div style="border-left:4px solid <?php echo esc_attr( $border_color ); ?>;background:#fff;border:1px solid #e0e0e0;border-left:4px solid <?php echo esc_attr( $border_color ); ?>;border-radius:4px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+		<div class="mr-finding-card" data-id="<?php echo (int) $f->id; ?>" data-sev="<?php echo esc_attr( $f->severity ); ?>" style="border-left:4px solid <?php echo esc_attr( $border_color ); ?>;background:#fff;border:1px solid #e0e0e0;border-left:4px solid <?php echo esc_attr( $border_color ); ?>;border-radius:4px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
 			<div style="display:flex;align-items:flex-start;gap:12px">
 				<span style="font-size:28px;line-height:1"><?php echo esc_html( $pl['icon'] ); ?></span>
 				<div style="flex:1">
@@ -517,12 +565,12 @@ class Malroot_Admin {
 						</div>
 
 						<?php if ( $pl['action_type'] === 'quarantine' && $f->status !== 'fixed' ) : ?>
-							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="flex-shrink:0">
+							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="flex-shrink:0" class="mr-remove-form" data-id="<?php echo (int) $f->id; ?>" data-sev="<?php echo esc_attr( $f->severity ); ?>">
 								<input type="hidden" name="action" value="malroot_quarantine" />
 								<input type="hidden" name="finding_id" value="<?php echo (int) $f->id; ?>" />
 								<?php wp_nonce_field( 'malroot_quarantine' ); ?>
 								<button type="submit"
-									class="button button-primary"
+									class="button button-primary mr-remove-btn"
 									style="background:#dc3232;border-color:#a00;text-shadow:none"
 									onclick="return confirm('<?php esc_attr_e( 'This will safely remove the item. You can restore it from the Quarantine page if needed. Continue?', 'malroot-security' ); ?>')">
 									<?php
@@ -944,7 +992,7 @@ class Malroot_Admin {
 					$sev = $f->severity ?? 'info';
 					$not_open = $f->status !== 'open';
 				?>
-					<tr style="<?php echo $not_open ? 'opacity:.5' : ''; ?>">
+					<tr data-id="<?php echo (int) $f->id; ?>" data-sev="<?php echo esc_attr( $sev ); ?>" style="<?php echo $not_open ? 'opacity:.5' : ''; ?>">
 						<td><span class="mr-badge mr-badge-<?php echo esc_attr( $sev ); ?>"><?php echo esc_html( $sev ); ?></span></td>
 						<td style="font-size:12px;color:#666"><?php echo esc_html( $f->module ); ?></td>
 						<td><code style="font-size:11px"><?php echo esc_html( $f->rule_id ); ?></code></td>
@@ -964,11 +1012,11 @@ class Malroot_Admin {
 								<span style="color:#bbb;font-size:11px"><?php esc_html_e( 'Ignored', 'malroot-security' ); ?></span>
 							<?php elseif ( strpos( $f->target, 'rest:' ) !== 0 ) : ?>
 								<div style="display:flex;flex-direction:column;gap:4px">
-									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="mr-remove-form" data-id="<?php echo (int) $f->id; ?>" data-sev="<?php echo esc_attr( $f->severity ); ?>">
 										<input type="hidden" name="action" value="malroot_quarantine" />
 										<input type="hidden" name="finding_id" value="<?php echo (int) $f->id; ?>" />
 										<?php wp_nonce_field( 'malroot_quarantine' ); ?>
-										<button type="submit" class="button button-small mr-btn-danger" style="width:100%"
+										<button type="submit" class="button button-small mr-btn-danger mr-remove-btn" style="width:100%"
 											onclick="return confirm('<?php esc_attr_e( 'Quarantine this item?', 'malroot-security' ); ?>')">
 											<?php esc_html_e( 'Quarantine', 'malroot-security' ); ?>
 										</button>

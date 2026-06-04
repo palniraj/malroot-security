@@ -150,6 +150,10 @@ class Malroot_Ajax {
 			wp_send_json_error( 'Forbidden' );
 		}
 
+		// A single file move/zero can be slow on busy shared hosts; give it room.
+		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
+		@set_time_limit( 60 );
+
 		$id     = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
 		$result = Malroot_Quarantine::quarantine_finding( $id );
 

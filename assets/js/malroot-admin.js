@@ -145,31 +145,139 @@
         $wrap.html(html);
     }
 
-    function bindQuarantineButtons() {
-        $(document).on('click', '.malroot-quarantine-btn', function () {
-            var $btn = $(this);
-            var id   = $btn.data('id');
-            var nonce = $btn.data('nonce');
-            if (!confirm('Quarantine this item? It can be restored from the Quarantine page.')) return;
-            $btn.prop('disabled', true).text('Working…');
-            $.post(malrootAdmin.ajaxUrl, {
-                action:     'malroot_quarantine_finding',
-                finding_id: id,
-                nonce:      nonce,
-            }).done(function (resp) {
-                if (resp && resp.success) {
-                    $btn.closest('tr').css('opacity', '.5');
-                    $btn.replaceWith('<span class="malroot-fixed">✓ Fixed</span>');
-                } else {
-                    alert(resp && resp.data ? resp.data : 'Error');
-                    $btn.prop('disabled', false).text('Quarantine');
-                }
-            }).fail(function () {
-                alert('Request failed.');
-                $btn.prop('disabled', false).text('Quarantine');
-            });
+    /* ------------------------------------------------------------------ */
+    /*  Async removal (single + bulk)                                       */
+    /* ------------------------------------------------------------------ */
+
+    // Decrement the matching severity tile + the score reaction.
+    function decrementTile(sev) {
+        var $tiles = $('.malroot-tiles .malroot-tile');
+        $tiles.each(function () {
+            var $tile = $(this);
+            var label = $tile.find('.malroot-tile-label').text().trim().toLowerCase();
+            if (label === sev) {
+                var $val = $tile.find('.malroot-tile-value');
+                var n = parseInt($val.text(), 10) || 0;
+                if (n > 0) { n -= 1; $val.text(n); if (n === 0) { $val.css('color', '#1d2327'); } }
+            }
         });
     }
+
+    // Remove one finding by id. Returns a jQuery promise.
+    function removeFinding(id, nonce) {
+        return $.post(malrootAdmin.ajaxUrl, {
+            action:     'malroot_quarantine_finding',
+            finding_id: id,
+            nonce:      nonce || malrootAdmin.quarantineNonce,
+        });
+    }
+
+    // Visually retire a finding card/row once removed.
+    function retireFinding(id, sev) {
+        var $card = $('.mr-finding-card[data-id="' + id + '"]');
+        var $row  = $('tr[data-id="' + id + '"]');
+        decrementTile(sev);
+        var $target = $card.length ? $card : $row;
+        $target.stop(true, true).animate({ opacity: 0.25 }, 250, function () {
+            if ($card.length) {
+                $card.slideUp(250, function () { $card.remove(); maybeAllClear(); });
+            }
+        });
+        if ($row.length) {
+            $row.find('.mr-remove-form').replaceWith('<span class="malroot-fixed">\u2713 ' + esc(malrootAdmin.i18n.removed) + '</span>');
+        }
+    }
+
+    // If every action-required card is gone, show the clean banner.
+    function maybeAllClear() {
+        if ($('.mr-finding-card').length === 0 && $('.mr-bulk-bar').length) {
+            $('.mr-bulk-bar').slideUp(200);
+            if (!$('.mr-allclear-notice').length) {
+                $('.mr-bulk-bar').after(
+                    '<div class="malroot-clean-notice mr-allclear-notice"><span class="dashicons dashicons-yes-alt"></span> ' +
+                    esc(malrootAdmin.i18n.bulkDone) + '</div>'
+                );
+            }
+        }
+    }
+
+    // Single-card / single-row removal (intercept the form submit).
+    $(document).on('submit', '.mr-remove-form', function (e) {
+        e.preventDefault();
+        var $form = $(this);
+        var id    = $form.data('id');
+        var sev   = String($form.data('sev') || '');
+        var nonce = $form.find('input[name="_wpnonce"]').val();
+        var $btn  = $form.find('.mr-remove-btn');
+        var orig  = $btn.html();
+
+        $btn.prop('disabled', true).text(malrootAdmin.i18n.removing);
+
+        removeFinding(id, nonce).done(function (resp) {
+            if (resp && resp.success) {
+                retireFinding(id, sev);
+            } else {
+                alert(resp && resp.data ? resp.data : malrootAdmin.i18n.removeFailed);
+                $btn.prop('disabled', false).html(orig);
+            }
+        }).fail(function () {
+            alert(malrootAdmin.i18n.removeFailed);
+            $btn.prop('disabled', false).html(orig);
+        });
+    });
+
+    // Bulk removal — process sequentially so a slow filesystem can't stack
+    // requests, with a live progress bar.
+    $(document).on('click', '.mr-bulk-btn', function () {
+        var $bar    = $(this).closest('.mr-bulk-bar');
+        var ids     = String($bar.data('ids') || '').split(',').filter(Boolean);
+        var nonce   = $bar.data('nonce');
+        if (!ids.length) return;
+        if (!confirm(malrootAdmin.i18n.confirmBulk)) return;
+
+        var $btn      = $(this);
+        var $progress = $bar.find('.mr-bulk-progress');
+        var $inner    = $bar.find('.mr-bulk-progress-inner');
+        var $text     = $bar.find('.mr-bulk-progress-text');
+        var total     = ids.length;
+        var i         = 0;
+        var failed    = 0;
+
+        $btn.prop('disabled', true);
+        $progress.show();
+
+        function next() {
+            if (i >= total) {
+                $text.text(malrootAdmin.i18n.bulkDone);
+                $btn.slideUp(200);
+                maybeAllClear();
+                return;
+            }
+            var id = parseInt(ids[i], 10);
+            i += 1;
+            $text.text(
+                malrootAdmin.i18n.bulkProgress.replace('%1$d', i).replace('%2$d', total)
+            );
+            $inner.css('width', Math.round((i / total) * 100) + '%');
+
+            var $card = $('.mr-finding-card[data-id="' + id + '"]');
+            var sev   = String($card.data('sev') || '');
+
+            removeFinding(id, nonce).done(function (resp) {
+                if (resp && resp.success) {
+                    retireFinding(id, sev);
+                } else {
+                    failed += 1;
+                }
+            }).fail(function () {
+                failed += 1;
+            }).always(function () {
+                setTimeout(next, 150);
+            });
+        }
+
+        next();
+    });
 
     function esc(str) {
         return $('<span>').text(str || '').html();

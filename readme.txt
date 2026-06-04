@@ -4,7 +4,7 @@ Tags: security, malware, scanner, backdoor, firewall
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -132,6 +132,11 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 
 == Changelog ==
 
+= 1.0.4 =
+* Removing a finding (file, user, option, trigger) is now instant and in-page — it uses a background request instead of reloading the whole admin screen, so the page no longer hangs while a file is being neutralised. The card fades out and the severity counters update live.
+* Added a "Remove all" bulk action to the "Action required" list. It cleans up every auto-removable critical/high finding in one click, processed one at a time with a live progress bar (REST-route findings, which need manual action, are excluded).
+* Each removal still backs the item up to Quarantine and is fully reversible.
+
 = 1.0.3 =
 * New Admin Guard module: enforces an allowlist of approved administrators on every request. Catches rogue admins injected directly into the database by a MySQL trigger or SQL backdoor (e.g. `wp_feed`, `newsfood`, and duplicate `wppanel` accounts) — accounts that bypass every normal WordPress creation hook and that a login-name blocklist can never keep up with. Unapproved admins are demoted and signed out automatically, and the last approved administrator is never removed.
 * Admin Guard allowlist is seeded automatically from the current clean administrators on first run; admins created by an approved admin through wp-admin are approved automatically.
@@ -161,6 +166,9 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 * CSV export, "Ignore finding" workflow, and self-integrity check.
 
 == Upgrade Notice ==
+
+= 1.0.4 =
+Removing findings no longer reloads the page and adds a one-click "Remove all" bulk cleanup with a progress bar. Every removal remains reversible from Quarantine.
 
 = 1.0.3 =
 Adds Admin Guard, which stops database-injected rogue administrators (MySQL trigger / SQL backdoors) by enforcing an approved-admin allowlist on every request. Fixes a Mailchimp for WooCommerce REST false positive.

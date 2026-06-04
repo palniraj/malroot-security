@@ -364,6 +364,32 @@
 }
 .mr-btn-danger:hover { background:#b32d2e; border-color:#a00; color:#fff; }
 
+/* ---- Bulk remove bar ------------------------------------- */
+.mr-bulk-bar {
+	display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+	background:#fff; border:1px solid #f0c0c0; border-left:4px solid #dc3232;
+	border-radius:8px; padding:14px 18px; margin:0 0 16px;
+	box-shadow:0 1px 3px rgba(0,0,0,.05);
+}
+.mr-bulk-info {
+	display:flex; align-items:center; gap:8px;
+	font-size:13px; color:#1d2327; font-weight:600;
+}
+.mr-bulk-info .dashicons { color:#dc3232; }
+.mr-bulk-btn { display:inline-flex; align-items:center; }
+.mr-bulk-progress {
+	display:flex; align-items:center; gap:10px; flex:1; min-width:200px;
+}
+.mr-bulk-progress-bar {
+	flex:1; background:#eee; border-radius:4px; height:8px; overflow:hidden;
+	min-width:120px;
+}
+.mr-bulk-progress-inner {
+	background:linear-gradient(90deg,#dc3232,#b32d2e);
+	height:8px; width:0; border-radius:4px; transition:width .25s ease;
+}
+.mr-bulk-progress-text { font-size:12px; color:#555; white-space:nowrap; }
+
 /* ---- Empty state ----------------------------------------- */
 .mr-empty {
 	text-align:center; padding:40px 20px; color:#888;
