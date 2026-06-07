@@ -198,7 +198,12 @@ class Malroot_Realtime {
 		if ( ! $host ) {
 			return $preempt;
 		}
-		// Whitelist common WP hosts (not exhaustive — anything else gets logged)
+		// Allowlist of well-known, first-party WordPress/hosting/commerce hosts.
+		// These are NOT contacted by Malroot — this plugin makes no outbound
+		// request to any of them. The list exists purely so the passive
+		// outbound monitor can SKIP logging traffic that other installed
+		// plugins (Jetpack, WooCommerce, Stripe, Akismet, etc.) legitimately
+		// make, and only record the unexpected hosts worth alerting on.
 		$safe = [
 			'api.wordpress.org',
 			'downloads.wordpress.org',

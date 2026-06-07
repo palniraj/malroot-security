@@ -4,7 +4,7 @@ Tags: security, malware, scanner, backdoor, firewall
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.4
+Stable tag: 1.0.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -91,7 +91,11 @@ Standard TOTP (RFC 6238). Each user enables 2FA from their profile, scans a QR c
 
 = Does Malroot send my data anywhere? =
 
-Malroot makes outbound requests only to the services described in the "External services" section below. No site content, credentials, or scan results are sent to any third party.
+By default, Malroot only contacts the official WordPress.org checksum APIs to verify your core and plugin files. Everything else is opt-in: IP geolocation is OFF until you enable it, and Slack alerts only fire if you configure a webhook. No site content, credentials, or scan results are sent to any third party. See the "External services" section below for full details.
+
+= How does Two-Factor Authentication show the setup key? =
+
+Malroot does not generate a scannable QR code, because doing so would mean sending your secret key to an outside image service. Instead it shows the setup key as text, which you type into your authenticator app using its "Enter a setup key" option. Nothing about your 2FA secret ever leaves your server.
 
 = Does the plugin work on multisite? =
 
@@ -99,7 +103,7 @@ Single-site only in v1.0. Multisite support is on the roadmap.
 
 == External services ==
 
-This plugin connects to the following external services. Each is documented below with what is sent, when, and why.
+This plugin connects to the external services listed below. By default only the WordPress.org checksum APIs are used; the rest are opt-in. Each is documented with what is sent, when, and why.
 
 **WordPress.org core checksums API** (`api.wordpress.org`)
 Used to verify whether changed core files match official WordPress release checksums. The plugin sends only the WordPress version string and locale (e.g. `6.5.4` / `en_US`) to fetch the public checksum manifest. No site content is sent. This is the same API WordPress core uses for its built-in checksum tool.
@@ -109,13 +113,9 @@ Provider: WordPress Foundation. Privacy policy: https://wordpress.org/about/priv
 Used to verify whether changed plugin files match the checksums of the version installed from the WordPress.org plugin directory. The plugin sends the plugin slug and version to fetch the public checksum manifest. No site content is sent.
 Provider: WordPress Foundation. Privacy policy: https://wordpress.org/about/privacy/. Terms: https://wordpress.org/about/
 
-**ipapi.co GeoIP lookup** (`ipapi.co`)
-Used to display a human-readable country and city for IP addresses recorded on the Login Activity page. The plugin sends only the IP address being looked up. Results are cached locally for 30 days so each unique IP is queried at most once per month. Lookups happen only when an administrator opens the Login Activity admin page, never during normal site traffic. This service is optional — if the API is unreachable, login records still display the raw IP.
+**ipapi.co GeoIP lookup** (`ipapi.co`) — optional, OFF by default
+Disabled unless the administrator turns on "IP geolocation" on the Settings page. When enabled, it displays a human-readable country and city for IP addresses recorded on the Login Activity page. The plugin sends only the IP address being looked up, and only when an administrator opens the Login Activity page — never during normal site traffic. Results are cached locally for 30 days so each unique IP is queried at most once per month. If the option is left off (the default), no IP address is ever sent and login records simply show the raw IP.
 Provider: ipapi. Privacy policy: https://ipapi.co/privacy/. Terms: https://ipapi.co/terms/
-
-**QR Server QR-code image** (`api.qrserver.com`)
-Used to render the QR code shown when a user enables Two-Factor Authentication on their profile. The plugin sends only an `otpauth://` URL containing the user's TOTP secret, the site name, and the user login. The image is requested only when an administrator clicks "Enable 2FA" on their own profile. Users who do not want to use this service can read the secret string displayed below the QR code and type it manually into their authenticator app instead — the QR is purely a convenience.
-Provider: GoQR.me. Privacy policy: https://goqr.me/privacy/. Terms: https://goqr.me/api/
 
 **Slack incoming webhook** (URL configured by the site administrator, optional)
 If the site administrator enters a Slack incoming webhook URL on the Settings page, critical and high-severity alerts are POSTed to that URL as a short notification payload (event type, severity, summary, and site host). No site content, credentials, or scan results are sent. This service is opt-in and only active when a webhook URL has been configured.
@@ -131,6 +131,18 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 6. The Settings page with real-time protection toggles and custom blocklists.
 
 == Changelog ==
+
+= 1.0.6 =
+* Privacy: Two-Factor Authentication no longer sends the TOTP secret to an external QR-code image service (api.qrserver.com). The setup key is now shown as text for manual entry into any authenticator app, so the secret never leaves your server.
+* Privacy: IP geolocation (ipapi.co) is now strictly opt-in and OFF by default. No IP address is sent anywhere unless an administrator enables "IP geolocation" on the Settings page.
+* Quarantine no longer stores removed files in the uploads/plugin folder and no longer writes a PHP stub over files. Removed files are now backed up as inert data in a private database table and deleted from disk with `wp_delete_file()`; restore writes them back via the WordPress filesystem API.
+* Use `wp_get_upload_dir()` / `wp_upload_dir()` for the uploads location instead of a hardcoded `WP_CONTENT_DIR/uploads` fallback.
+* Removed the dead Terms/Privacy link to goqr.me from the readme (the QR service is no longer used).
+
+= 1.0.5 =
+* Important safety fix: the "Remove all" bulk action and automatic quarantine can no longer touch files that belong to WordPress core, an installed plugin, or an installed theme. A heuristic false positive on legitimate code previously could be bulk-removed, blanking a required file and taking the site down. Such findings are now surfaced for deliberate, one-at-a-time review instead of one-click deletion. (mu-plugins stay removable, as self-healing loaders there are a known malware trick.)
+* Fewer false positives: `.sql` schema/template files bundled inside a plugin or theme (e.g. LiteSpeed Cache's `data_structure` files) are no longer flagged as public database dumps. PHP files inside recognised plugin-managed uploads folders (Sucuri, WP-Staging, UpdraftPlus, BackWPup) are now listed as low-priority "review" items rather than critical.
+* Individual, explicitly-confirmed removals are unchanged and still able to remove a genuine malicious file from anywhere.
 
 = 1.0.4 =
 * Removing a finding (file, user, option, trigger) is now instant and in-page — it uses a background request instead of reloading the whole admin screen, so the page no longer hangs while a file is being neutralised. The card fades out and the severity counters update live.
@@ -166,6 +178,12 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 * CSV export, "Ignore finding" workflow, and self-integrity check.
 
 == Upgrade Notice ==
+
+= 1.0.6 =
+Privacy fixes for WordPress.org compliance: 2FA setup no longer sends your secret to an external QR service, IP geolocation is now opt-in and off by default, and quarantined files are backed up to the database instead of the uploads folder.
+
+= 1.0.5 =
+Safety fix: one-click "Remove all" and auto-quarantine can no longer delete WordPress core, plugin, or theme files, preventing a false positive from breaking your site. Also removes common false positives for plugin-bundled .sql files and plugin-managed PHP in uploads.
 
 = 1.0.4 =
 Removing findings no longer reloads the page and adds a one-click "Remove all" bulk cleanup with a progress bar. Every removal remains reversible from Quarantine.

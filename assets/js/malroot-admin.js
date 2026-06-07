@@ -164,11 +164,14 @@
     }
 
     // Remove one finding by id. Returns a jQuery promise.
-    function removeFinding(id, nonce) {
+    // allowProtected=true marks a single, individually-confirmed removal that
+    // may act on a file inside installed software. The bulk loop omits it.
+    function removeFinding(id, nonce, allowProtected) {
         return $.post(malrootAdmin.ajaxUrl, {
-            action:     'malroot_quarantine_finding',
-            finding_id: id,
-            nonce:      nonce || malrootAdmin.quarantineNonce,
+            action:          'malroot_quarantine_finding',
+            finding_id:      id,
+            nonce:           nonce || malrootAdmin.quarantineNonce,
+            allow_protected: allowProtected ? 1 : 0,
         });
     }
 
@@ -213,7 +216,7 @@
 
         $btn.prop('disabled', true).text(malrootAdmin.i18n.removing);
 
-        removeFinding(id, nonce).done(function (resp) {
+        removeFinding(id, nonce, true).done(function (resp) {
             if (resp && resp.success) {
                 retireFinding(id, sev);
             } else {

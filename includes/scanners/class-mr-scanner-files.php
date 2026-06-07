@@ -74,10 +74,10 @@ class Malroot_Scanner_Files extends Malroot_Scanner_Base {
 
 	protected function scan_uploads_for_php() {
 		$uploads = wp_get_upload_dir();
-		$base    = $uploads['basedir'] ?? WP_CONTENT_DIR . '/uploads';
-		if ( ! is_dir( $base ) ) {
+		if ( empty( $uploads['basedir'] ) || ! is_dir( $uploads['basedir'] ) ) {
 			return;
 		}
+		$base = $uploads['basedir'];
 		$it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $base, FilesystemIterator::SKIP_DOTS ) );
 		foreach ( $it as $file ) {
 			if ( ! $file->isFile() ) {
@@ -96,11 +96,29 @@ class Malroot_Scanner_Files extends Malroot_Scanner_Base {
 			if ( $basename === 'index.php' && $size < 200 ) {
 				continue;
 			}
+			$relpath = $this->relpath( $path );
+			// Some reputable plugins keep operational PHP inside their own
+			// working directory under uploads (e.g. Sucuri audit logs,
+			// WP-Staging build dirs). Surface these for review but don't raise
+			// a critical, one-click-removable alarm — deleting them breaks the
+			// plugin without making the site any safer.
+			$managed_dirs = [ 'sucuri', 'wp-staging', 'backwpup', 'wpvividbackups', 'updraft' ];
+			$is_managed   = false;
+			foreach ( $managed_dirs as $dir ) {
+				if ( preg_match( '#(^|/)uploads/' . preg_quote( $dir, '#' ) . '/#', $relpath ) ) {
+					$is_managed = true;
+					break;
+				}
+			}
+			if ( $is_managed ) {
+				$this->record( 'FI-001', 'low', $relpath, 'PHP file in a plugin-managed uploads subfolder — review, but usually expected', 'size=' . $size );
+				continue;
+			}
 			$severity = $size === 0 ? 'high' : 'critical';
 			$summary  = $size === 0
 				? 'Zero-byte PHP file in uploads — backdoor remnant'
 				: 'PHP file in uploads — should never exist';
-			$this->record( 'FI-001', $severity, $this->relpath( $path ), $summary, 'size=' . $size );
+			$this->record( 'FI-001', $severity, $relpath, $summary, 'size=' . $size );
 		}
 	}
 
@@ -176,10 +194,18 @@ class Malroot_Scanner_Files extends Malroot_Scanner_Base {
 				continue;
 			}
 			if ( preg_match( '/\.(sql|sql\.gz|sql\.bz2)$/i', $path ) ) {
+				$relpath = $this->relpath( $path );
+				// LiteSpeed Cache, WooCommerce and many other plugins ship
+				// legitimate .sql schema/template files inside their own
+				// directory. Those are part of the installed software, not a
+				// publicly-dumped database, so don't raise a critical alarm.
+				if ( Malroot_Quarantine::protected_software_kind( $relpath ) ) {
+					continue;
+				}
 				$this->record(
 					'FI-003',
 					'critical',
-					$this->relpath( $path ),
+					$relpath,
 					'SQL dump file inside web-accessible directory',
 					'size=' . $file->getSize()
 				);

@@ -155,7 +155,13 @@ class Malroot_Ajax {
 		@set_time_limit( 60 );
 
 		$id     = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
-		$result = Malroot_Quarantine::quarantine_finding( $id );
+		// A single, individually-confirmed removal may act on files inside
+		// installed software (the operator read that specific finding and
+		// chose to remove it). The bulk loop never sets this flag, so a
+		// one-click "remove everything" can never destroy core/plugin/theme
+		// files.
+		$allow_protected = ! empty( $_POST['allow_protected'] );
+		$result = Malroot_Quarantine::quarantine_finding( $id, $allow_protected );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( $result->get_error_message() );

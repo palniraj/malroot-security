@@ -106,7 +106,9 @@ class Malroot_Admin {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
 		check_admin_referer( 'malroot_quarantine' );
 		$id = (int) ( isset( $_POST['finding_id'] ) ? sanitize_text_field( wp_unslash( $_POST['finding_id'] ) ) : 0 );
-		$result = Malroot_Quarantine::quarantine_finding( $id );
+		// Individually-confirmed single removal: permitted to act on files
+		// inside installed software (the no-JS fallback for one finding).
+		$result = Malroot_Quarantine::quarantine_finding( $id, true );
 		$args = is_wp_error( $result ) ? [ 'mr_error' => urlencode( $result->get_error_message() ) ] : [ 'mr_quarantined' => 1 ];
 		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php?page=malroot-security' ) ) );
 		exit;
@@ -135,6 +137,7 @@ class Malroot_Admin {
 			'monitor_outbound'         => empty( $_POST['monitor_outbound'] ) ? 0 : 1,
 			'scheduled_scans'          => empty( $_POST['scheduled_scans'] ) ? 0 : 1,
 			'require_2fa_admins'       => empty( $_POST['require_2fa_admins'] ) ? 0 : 1,
+			'geoip_enabled'            => empty( $_POST['geoip_enabled'] ) ? 0 : 1,
 			'alert_email'              => sanitize_email( wp_unslash( $_POST['alert_email'] ?? '' ) ),
 			'slack_webhook'            => esc_url_raw( wp_unslash( $_POST['slack_webhook'] ?? '' ) ),
 			'login_threshold'          => max( 3, min( 20, (int) ( isset( $_POST['login_threshold'] ) ? sanitize_text_field( wp_unslash( $_POST['login_threshold'] ) ) : 5 ) ) ),
@@ -271,13 +274,25 @@ class Malroot_Admin {
 			$review  = array_filter( $real_threats, fn( $f ) => in_array( $f->severity, [ 'medium', 'low' ], true ) );
 
 			if ( $urgent ) {
-				// Count how many urgent findings can actually be auto-removed
-				// (REST routes need manual action and aren't bulk-removable).
+				// Count how many urgent findings can actually be auto-removed.
+				// Excluded from one-click bulk removal:
+				//  - REST routes (need manual action, can't be force-removed)
+				//  - files that belong to WordPress core / an installed plugin
+				//    / an installed theme (a false positive here would blank a
+				//    required file and take the whole site down — these must be
+				//    handled deliberately, one at a time).
 				$bulk_ids = [];
 				foreach ( $urgent as $f ) {
-					if ( strpos( $f->target, 'rest:' ) !== 0 ) {
-						$bulk_ids[] = (int) $f->id;
+					if ( strpos( $f->target, 'rest:' ) === 0 ) {
+						continue;
 					}
+					// Only file targets can be "protected software"; DB targets
+					// (options/users/triggers/etc.) carry a known prefix.
+					$is_db_target = (bool) preg_match( '/^(options|users|trigger|event|postmeta|rest):/', $f->target );
+					if ( ! $is_db_target && Malroot_Quarantine::protected_software_kind( $f->target ) ) {
+						continue;
+					}
+					$bulk_ids[] = (int) $f->id;
 				}
 
 				echo '<h2 style="color:#dc3232;margin-top:24px">🚨 ' . esc_html__( 'Action required', 'malroot-security' ) . ' <span style="font-size:14px;font-weight:normal;color:#666">(' . count( $urgent ) . ')</span></h2>';
@@ -833,6 +848,10 @@ class Malroot_Admin {
 							<td><label><input type="checkbox" name="realtime_scan_options" value="1" <?php checked( ! empty( $s['realtime_scan_options'] ) ); ?>> <?php esc_html_e( 'Block option saves containing eval/base64/known C2 strings.', 'malroot-security' ); ?></label></td></tr>
 						<tr><th><?php esc_html_e( 'Outbound connection monitor', 'malroot-security' ); ?></th>
 							<td><label><input type="checkbox" name="monitor_outbound" value="1" <?php checked( ! empty( $s['monitor_outbound'] ) ); ?>> <?php esc_html_e( 'Log every external HTTP request and alert on known C2 hosts.', 'malroot-security' ); ?></label></td></tr>
+						<tr><th><?php esc_html_e( 'IP geolocation (third-party)', 'malroot-security' ); ?></th>
+							<td><label><input type="checkbox" name="geoip_enabled" value="1" <?php checked( ! empty( $s['geoip_enabled'] ) ); ?>> <?php esc_html_e( 'Look up the country/city for login IP addresses on the Logins page.', 'malroot-security' ); ?></label>
+								<p class="description"><?php esc_html_e( 'Off by default. When enabled, the IP address being viewed is sent to ipapi.co (a third-party service) to resolve its location. Results are cached locally. Leave off to keep all IP data on your server. See the plugin\'s "External services" documentation for details.', 'malroot-security' ); ?></p>
+							</td></tr>
 					</table>
 				</div>
 

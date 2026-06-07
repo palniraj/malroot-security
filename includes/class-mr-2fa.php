@@ -109,7 +109,12 @@ class Malroot_TwoFactor {
 		$account = $user->user_login . '@' . wp_parse_url( home_url(), PHP_URL_HOST );
 		$issuer  = get_bloginfo( 'name' );
 		$url     = Malroot_TOTP::otpauth_url( $secret, $account, $issuer );
-		$qr_src  = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . rawurlencode( $url );
+		// Present the secret in space-separated groups of 4 so it's easy to
+		// type by hand. The QR code is intentionally not rendered: generating
+		// it would mean sending the TOTP secret to a third-party image service,
+		// which would leak the secret off-site. Every authenticator app
+		// supports manual ("enter a setup key") entry instead.
+		$secret_grouped = trim( chunk_split( $secret, 4, ' ' ) );
 
 		// Enqueue the small JS that moves the setup card out of the profile <form>.
 		wp_register_script( 'malroot-2fa-setup', false, [], MALROOT_VERSION, true );
@@ -121,33 +126,36 @@ class Malroot_TwoFactor {
 
 		// The verify form MUST be outside the WP profile <form>.
 		// We render it via admin_footer so it appears after the profile form closes.
-		add_action( 'admin_footer', function () use ( $user, $secret, $codes, $qr_src ) {
+		add_action( 'admin_footer', function () use ( $user, $secret_grouped, $codes, $url ) {
 			?>
 			<div id="malroot-2fa-setup" style="border:2px solid #2271b1;background:#f0f6fc;border-radius:6px;padding:24px;margin:20px 0;max-width:680px">
 				<h3 style="margin-top:0;color:#1d4ed8">🔐 <?php esc_html_e( 'Set up your authenticator', 'malroot-security' ); ?></h3>
-				<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
-					<div>
-						<img src="<?php echo esc_url( $qr_src ); ?>" alt="QR code" width="180" height="180" style="border:1px solid #ddd;background:#fff;padding:6px;display:block"/>
-					</div>
-					<div style="flex:1;min-width:240px">
-						<p style="margin-top:0"><strong><?php esc_html_e( 'Step 1', 'malroot-security' ); ?></strong> — <?php esc_html_e( 'Install Google Authenticator, Authy, or any TOTP app.', 'malroot-security' ); ?></p>
-						<p><strong><?php esc_html_e( 'Step 2', 'malroot-security' ); ?></strong> — <?php esc_html_e( 'Scan the QR code, or enter this secret manually:', 'malroot-security' ); ?></p>
-						<code style="font-size:14px;letter-spacing:2px;background:#fff;padding:4px 8px;border:1px solid #ccd0d4;display:inline-block;margin-bottom:12px"><?php echo esc_html( $secret ); ?></code>
-						<p><strong><?php esc_html_e( 'Step 3', 'malroot-security' ); ?></strong> — <?php esc_html_e( 'Enter the 6-digit code from the app:', 'malroot-security' ); ?></p>
-						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:flex;gap:8px;align-items:center">
-							<input type="hidden" name="action" value="malroot_2fa_setup" />
-							<input type="hidden" name="user_id" value="<?php echo (int) $user->ID; ?>" />
-							<input type="hidden" name="confirm" value="1" />
-							<?php wp_nonce_field( 'malroot_2fa_setup_' . $user->ID ); ?>
-							<input type="text" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6"
-								placeholder="000000"
-								style="font-size:20px;letter-spacing:6px;width:130px;text-align:center;padding:6px"
-								autocomplete="one-time-code" required autofocus />
-							<button type="submit" class="button button-primary button-large">
-								<?php esc_html_e( 'Verify and Enable', 'malroot-security' ); ?>
-							</button>
-						</form>
-					</div>
+				<div style="min-width:240px">
+					<p style="margin-top:0"><strong><?php esc_html_e( 'Step 1', 'malroot-security' ); ?></strong> — <?php esc_html_e( 'Install Google Authenticator, Authy, 1Password, or any TOTP app.', 'malroot-security' ); ?></p>
+					<p><strong><?php esc_html_e( 'Step 2', 'malroot-security' ); ?></strong> — <?php esc_html_e( 'In your app, choose "Enter a setup key" and type this key (the spaces are only for readability):', 'malroot-security' ); ?></p>
+					<code style="font-size:16px;letter-spacing:2px;background:#fff;padding:8px 12px;border:1px solid #ccd0d4;display:inline-block;margin-bottom:8px"><?php echo esc_html( $secret_grouped ); ?></code>
+					<p style="font-size:12px;color:#666;margin:0 0 12px">
+						<?php esc_html_e( 'Use account name', 'malroot-security' ); ?>
+						<code><?php echo esc_html( $user->user_login ); ?></code>,
+						<?php esc_html_e( 'type "Time based", 6 digits.', 'malroot-security' ); ?>
+						<?php esc_html_e( 'Apps that accept an "otpauth" link can use this instead:', 'malroot-security' ); ?>
+						<br>
+						<input type="text" readonly value="<?php echo esc_attr( $url ); ?>" onfocus="this.select()" style="width:100%;max-width:560px;font-size:11px;margin-top:4px;padding:4px" />
+					</p>
+					<p><strong><?php esc_html_e( 'Step 3', 'malroot-security' ); ?></strong> — <?php esc_html_e( 'Enter the 6-digit code from the app:', 'malroot-security' ); ?></p>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:flex;gap:8px;align-items:center">
+						<input type="hidden" name="action" value="malroot_2fa_setup" />
+						<input type="hidden" name="user_id" value="<?php echo (int) $user->ID; ?>" />
+						<input type="hidden" name="confirm" value="1" />
+						<?php wp_nonce_field( 'malroot_2fa_setup_' . $user->ID ); ?>
+						<input type="text" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6"
+							placeholder="000000"
+							style="font-size:20px;letter-spacing:6px;width:130px;text-align:center;padding:6px"
+							autocomplete="one-time-code" required autofocus />
+						<button type="submit" class="button button-primary button-large">
+							<?php esc_html_e( 'Verify and Enable', 'malroot-security' ); ?>
+						</button>
+					</form>
 				</div>
 				<div style="background:#fff;border:1px solid #ffe082;border-radius:4px;padding:12px;margin-top:16px">
 					<strong>⚠️ <?php esc_html_e( 'Save these recovery codes now', 'malroot-security' ); ?></strong>

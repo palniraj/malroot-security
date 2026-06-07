@@ -13,11 +13,27 @@ class Malroot_GeoIP {
 	const CACHE_TTL    = 30 * DAY_IN_SECONDS;
 
 	/**
+	 * Whether the optional third-party IP geolocation lookup is enabled.
+	 * Off by default — the administrator must opt in from the Settings page.
+	 */
+	public static function is_enabled() {
+		$settings = (array) get_option( 'malroot_settings', [] );
+		return ! empty( $settings['geoip_enabled'] );
+	}
+
+	/**
 	 * Returns: [ 'country' => 'AU', 'country_name' => 'Australia', 'city' => 'Sydney', 'flag' => '🇦🇺' ]
 	 *          or null on failure / private IP.
 	 */
 	public static function lookup( $ip ) {
 		if ( ! $ip || self::is_private_ip( $ip ) ) {
+			return null;
+		}
+
+		// Opt-in only. IP geolocation sends the IP address to a third-party
+		// service (ipapi.co), so it is disabled by default and only runs when
+		// the administrator explicitly turns it on in Settings.
+		if ( ! self::is_enabled() ) {
 			return null;
 		}
 

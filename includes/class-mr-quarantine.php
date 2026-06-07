@@ -25,33 +25,97 @@ class Malroot_Quarantine {
 	}
 
 	public static function dir() {
+		// Backed up file contents are stored in the database (see record_log),
+		// not on disk. This method is kept only for backward compatibility with
+		// any older quarantine records that still reference an on-disk copy.
 		$uploads = wp_upload_dir();
-		$base    = isset( $uploads['basedir'] ) ? $uploads['basedir'] : WP_CONTENT_DIR . '/uploads';
-		$dir     = $base . '/malroot-security/quarantine';
-		if ( ! is_dir( $dir ) ) {
-			wp_mkdir_p( $dir );
+		if ( empty( $uploads['basedir'] ) ) {
+			return '';
 		}
-		// Block HTTP access to anything stored here.
-		$htaccess = $dir . '/.htaccess';
-		if ( ! file_exists( $htaccess ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			file_put_contents( $htaccess, "Require all denied\nOptions -Indexes\n" );
+		return $uploads['basedir'] . '/malroot-security/quarantine';
+	}
+
+	/**
+	 * Is this path part of WordPress core, an installed plugin, or an
+	 * installed theme?
+	 *
+	 * Files that belong to real, installed software must never be destroyed by
+	 * an automated or one-click "remove everything" action — a single false
+	 * positive (e.g. a heuristic matching legitimate plugin code) would
+	 * otherwise take the whole site down. Such findings are surfaced for the
+	 * operator to handle deliberately (deactivate / reinstall the plugin),
+	 * not bulk-deleted.
+	 *
+	 * mu-plugins are intentionally NOT treated as protected: a self-healing
+	 * loader dropped into mu-plugins is a known malware persistence trick and
+	 * must stay removable.
+	 *
+	 * @param string $rel_path Path relative to ABSPATH (as stored in findings).
+	 * @return string|false  A label ('wordpress-core'|'plugin'|'theme') or false.
+	 */
+	public static function protected_software_kind( $rel_path ) {
+		$abs = wp_normalize_path( ABSPATH . ltrim( (string) $rel_path, '/' ) );
+
+		// WordPress core directories.
+		$core_dirs = [
+			wp_normalize_path( ABSPATH . 'wp-admin' ) . '/',
+			wp_normalize_path( ABSPATH . WPINC ) . '/',
+		];
+		foreach ( $core_dirs as $dir ) {
+			if ( strpos( $abs, $dir ) === 0 ) {
+				return 'wordpress-core';
+			}
 		}
-		$index = $dir . '/index.php';
-		if ( ! file_exists( $index ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			file_put_contents( $index, "<?php // Silence is golden\n" );
+
+		// Installed plugins — but only files that live *inside* a plugin's own
+		// sub-directory. A stray file dropped directly into /plugins/ is not a
+		// real plugin and stays removable.
+		if ( defined( 'WP_PLUGIN_DIR' ) ) {
+			$plugins_dir = wp_normalize_path( WP_PLUGIN_DIR ) . '/';
+			if ( strpos( $abs, $plugins_dir ) === 0 ) {
+				$inner = substr( $abs, strlen( $plugins_dir ) );
+				if ( strpos( $inner, '/' ) !== false ) {
+					return 'plugin';
+				}
+			}
 		}
-		return $dir;
+
+		// Installed themes (covers the default themes dir and any registered
+		// theme roots).
+		$theme_roots = [];
+		if ( function_exists( 'get_theme_root' ) ) {
+			$theme_roots[] = get_theme_root();
+		}
+		if ( defined( 'WP_CONTENT_DIR' ) ) {
+			$theme_roots[] = WP_CONTENT_DIR . '/themes';
+		}
+		foreach ( array_unique( $theme_roots ) as $root ) {
+			$root = wp_normalize_path( $root ) . '/';
+			if ( strpos( $abs, $root ) === 0 ) {
+				$inner = substr( $abs, strlen( $root ) );
+				if ( strpos( $inner, '/' ) !== false ) {
+					return 'theme';
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**
 	 * Quarantine a finding by ID. Routes to the right handler based on the
 	 * finding's target string.
 	 *
+	 * @param int  $finding_id      Finding row ID.
+	 * @param bool $allow_protected When false (the default, used by automated
+	 *                              and bulk actions), files belonging to WP
+	 *                              core / installed plugins / installed themes
+	 *                              are refused so a false positive cannot break
+	 *                              the site. A deliberate, individually
+	 *                              confirmed removal may pass true.
 	 * @return true|WP_Error
 	 */
-	public static function quarantine_finding( $finding_id ) {
+	public static function quarantine_finding( $finding_id, $allow_protected = false ) {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$f = $wpdb->get_row( $wpdb->prepare(
@@ -89,7 +153,7 @@ class Malroot_Quarantine {
 			return new WP_Error( 'manual_action', __( 'REST routes cannot be auto-quarantined. Disable the plugin that registers them.', 'malroot-security' ) );
 		} else {
 			// Treat as a file path relative to ABSPATH
-			$ok = self::quarantine_file( $target );
+			$ok = self::quarantine_file( $target, $allow_protected );
 			$type = 'file';
 		}
 
@@ -113,50 +177,117 @@ class Malroot_Quarantine {
 	/*  File handler                                                    */
 	/* ---------------------------------------------------------------- */
 
-	private static function quarantine_file( $rel_path ) {
+	private static function quarantine_file( $rel_path, $allow_protected = false ) {
 		$rel_path = ltrim( $rel_path, '/' );
+
+		// Safety gate: never let an automated or bulk action destroy a file
+		// that belongs to WordPress core, an installed plugin, or an installed
+		// theme. A heuristic false positive on legitimate code would otherwise
+		// blank out a required class file and take the whole site down.
+		if ( ! $allow_protected ) {
+			$kind = self::protected_software_kind( $rel_path );
+			if ( $kind ) {
+				$labels = [
+					'wordpress-core' => __( 'WordPress core', 'malroot-security' ),
+					'plugin'         => __( 'an installed plugin', 'malroot-security' ),
+					'theme'          => __( 'an installed theme', 'malroot-security' ),
+				];
+				$label = $labels[ $kind ] ?? __( 'installed software', 'malroot-security' );
+				return new WP_Error(
+					'protected_software',
+					sprintf(
+						/* translators: 1: file path, 2: software type, e.g. "an installed plugin" */
+						__( '%1$s is part of %2$s and was not removed automatically. Removing files from installed software can break your site. If you believe this file is malicious, deactivate and reinstall that plugin/theme from a clean source instead.', 'malroot-security' ),
+						esc_html( $rel_path ),
+						$label
+					)
+				);
+			}
+		}
+
 		$abs = ABSPATH . $rel_path;
 		if ( ! file_exists( $abs ) ) {
 			return new WP_Error( 'no_file', __( 'File no longer exists.', 'malroot-security' ) );
 		}
-		$dest_dir = self::dir() . '/files/' . dirname( $rel_path );
-		wp_mkdir_p( $dest_dir );
-		$dest = $dest_dir . '/' . basename( $rel_path ) . '.' . time() . '.quarantined';
 
-		// Try rename first (fastest, same filesystem)
-  // phpcs:ignore WordPress.WP.AlternativeFunctions
-		if ( @rename( $abs, $dest ) ) {
-			self::record_log( 'file', $rel_path, [ 'dest' => $dest, 'method' => 'rename' ] );
-			return true;
+		// Back the file up into the database (base64), then delete it from disk.
+		//
+		// We deliberately do NOT move or copy the file into the uploads folder
+		// or the plugin folder, and we never write a PHP stub over it: storing
+		// code-containing files under those locations is not permitted, and
+		// quarantined files would be publicly readable there. Keeping the
+		// backup as inert data in a private DB table avoids all of that while
+		// still allowing a full restore.
+		$contents = self::read_file_contents( $abs );
+		if ( $contents === false ) {
+			return new WP_Error(
+				'read_failed',
+				sprintf(
+					/* translators: %s: file path */
+					__( 'Could not read %s to back it up. Use your hosting file manager or FTP to remove it manually.', 'malroot-security' ),
+					esc_html( $rel_path )
+				)
+			);
 		}
 
-		// Rename failed (common when source is owned by a different OS user than PHP).
-		// Fall back to copy + zero-out the original so it can't execute.
-		if ( @copy( $abs, $dest ) ) {
-			// Zero out the original — this neutralises it even if we can't delete it.
-			// phpcs:ignore PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- neutralising a malware file at its real webroot (ABSPATH) location; it cannot be relocated to wp_upload_dir().
-			@file_put_contents( $abs, '<?php // Quarantined by Malroot Security' . "\n" );
-			self::record_log( 'file', $rel_path, [ 'dest' => $dest, 'method' => 'copy+zero', 'original_zeroed' => true ] );
-			return true;
+		self::record_log( 'file', $rel_path, [
+			'content_b64' => base64_encode( $contents ),
+			'size'        => strlen( $contents ),
+			'perms'       => @fileperms( $abs ) & 0777,
+			'method'      => 'db-backup+delete',
+		] );
+
+		// Delete using the WordPress filesystem helper.
+		wp_delete_file( $abs );
+
+		if ( file_exists( $abs ) ) {
+			// Deletion failed — almost always because the file is owned by a
+			// different system user than PHP. We have a safe backup in the DB,
+			// but the operator must remove the live file themselves.
+			return new WP_Error(
+				'move_failed',
+				sprintf(
+					/* translators: %s: file path */
+					__( 'Backed up %s, but could not delete it automatically (it is owned by a different system user). Use your hosting file manager or FTP to delete it.', 'malroot-security' ),
+					esc_html( $rel_path )
+				)
+			);
 		}
 
-		// Can't copy either — try to at least zero out the file in place.
-  // phpcs:ignore WordPress.WP.AlternativeFunctions
-		if ( is_writable( $abs ) ) {
-			// phpcs:ignore PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- neutralising a malware file at its real webroot (ABSPATH) location; it cannot be relocated to wp_upload_dir().
-			@file_put_contents( $abs, '<?php // Quarantined by Malroot Security' . "\n" );
-			self::record_log( 'file', $rel_path, [ 'dest' => $abs, 'method' => 'zeroed_in_place' ] );
-			return true;
-		}
+		return true;
+	}
 
-		return new WP_Error(
-			'move_failed',
-			sprintf(
-				/* translators: %s: file path */
-				__( 'Could not quarantine %s — the file is owned by a different system user. Use your hosting file manager or FTP to delete it manually.', 'malroot-security' ),
-				esc_html( $rel_path )
-			)
-		);
+	/**
+	 * Read a file's raw bytes via the WordPress filesystem API.
+	 *
+	 * @return string|false
+	 */
+	private static function read_file_contents( $abs ) {
+		$fs = self::filesystem();
+		if ( $fs ) {
+			$data = $fs->get_contents( $abs );
+			if ( $data !== false ) {
+				return $data;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Initialise and return the WP_Filesystem instance, or null if unavailable.
+	 */
+	private static function filesystem() {
+		global $wp_filesystem;
+		if ( $wp_filesystem instanceof WP_Filesystem_Base ) {
+			return $wp_filesystem;
+		}
+		if ( ! function_exists( 'WP_Filesystem' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		if ( WP_Filesystem() && $wp_filesystem instanceof WP_Filesystem_Base ) {
+			return $wp_filesystem;
+		}
+		return null;
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -323,29 +454,46 @@ class Malroot_Quarantine {
 
 		switch ( $row->item_type ) {
 			case 'file':
-				if ( empty( $payload['dest'] ) || ! file_exists( $payload['dest'] ) ) {
-					return new WP_Error( 'missing', __( 'Quarantined copy missing.', 'malroot-security' ) );
-				}
 				$abs = ABSPATH . ltrim( $row->target, '/' );
-				wp_mkdir_p( dirname( $abs ) );
 
-				// Try rename first
-    // phpcs:ignore WordPress.WP.AlternativeFunctions, PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- restoring a previously quarantined file to its original webroot (ABSPATH) location, as chosen by the operator.
-				if ( @rename( $payload['dest'], $abs ) ) {
+				// Current format: contents are stored (base64) in the DB.
+				if ( isset( $payload['content_b64'] ) ) {
+					$bytes = base64_decode( $payload['content_b64'] );
+					if ( $bytes === false ) {
+						return new WP_Error( 'missing', __( 'Quarantined backup is corrupt.', 'malroot-security' ) );
+					}
+					$fs = self::filesystem();
+					if ( ! $fs ) {
+						return new WP_Error( 'restore_failed', __( 'Could not access the filesystem to restore this file.', 'malroot-security' ) );
+					}
+					$fs->mkdir( dirname( $abs ) );
+					if ( ! $fs->put_contents( $abs, $bytes ) ) {
+						return new WP_Error( 'restore_failed', sprintf(
+							/* translators: %s: file path */
+							__( 'Could not restore %s — filesystem permission issue. Check that the destination folder is writable.', 'malroot-security' ),
+							esc_html( $row->target )
+						) );
+					}
+					if ( ! empty( $payload['perms'] ) ) {
+						$fs->chmod( $abs, (int) $payload['perms'] );
+					}
 					break;
 				}
-				// Fall back to copy (cross-owner filesystem)
-				// phpcs:ignore WordPress.WP.AlternativeFunctions, PluginCheck.CodeAnalysis.WriteFile.ABSPATHDetected -- restoring a previously quarantined file to its original webroot (ABSPATH) location, as chosen by the operator.
-				if ( @copy( $payload['dest'], $abs ) ) {
-					wp_delete_file( $payload['dest'] );
-					break;
+
+				// Legacy format: an on-disk copy under the old quarantine dir.
+				if ( ! empty( $payload['dest'] ) && file_exists( $payload['dest'] ) ) {
+					$bytes = self::read_file_contents( $payload['dest'] );
+					$fs    = self::filesystem();
+					if ( $bytes !== false && $fs ) {
+						$fs->mkdir( dirname( $abs ) );
+						if ( $fs->put_contents( $abs, $bytes ) ) {
+							wp_delete_file( $payload['dest'] );
+							break;
+						}
+					}
 				}
-				return new WP_Error( 'restore_failed', sprintf(
-					/* translators: %s: file path */
-					__( 'Could not restore %s — filesystem permission issue. Use your hosting file manager to move the file back manually from wp-content/uploads/malroot-security/quarantine/.', 'malroot-security' ),
-					esc_html( $row->target )
-				) );
-				break;
+
+				return new WP_Error( 'missing', __( 'Quarantined backup is no longer available.', 'malroot-security' ) );
 
 			case 'option':
 				update_option( $row->target, maybe_unserialize( $payload['value'] ?? '' ) );

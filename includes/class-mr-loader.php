@@ -108,6 +108,7 @@ class Malroot_Loader {
 				'slack_webhook'          => '',
 				'scheduled_scans'        => 1,
 				'monitor_outbound'       => 1,
+				'geoip_enabled'          => 0,
 			] );
 		}
 
