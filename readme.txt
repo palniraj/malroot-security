@@ -125,10 +125,11 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 
 1. The Findings dashboard with the security score and severity tiles.
 2. The Simple View showing plain-language cards with one-click action buttons.
-3. The Quarantine page with restore controls for safely-removed items.
-4. The Login Activity page with location lookup and automated-tool flagging.
-5. The one-click Incident Response runbook.
-6. The Settings page with real-time protection toggles and custom blocklists.
+3. The Settings page with Admin Guard, real-time protection toggles, and custom blocklists.
+4. The Login Activity page showing successful and failed logins, location, and automated-tool flagging.
+5. The Spam Cleanup tool with a dry-run preview before any account is deleted.
+6. The Alerts log of real-time security events.
+7. The one-click Incident Response runbook.
 
 == Changelog ==
 
