@@ -26,7 +26,18 @@ class Malroot_Verifier {
 	public static function verify( $rel_path ) {
 		$abs = ABSPATH . ltrim( $rel_path, '/' );
 		if ( ! file_exists( $abs ) ) {
-			return self::result( self::VERDICT_UNKNOWN, __( 'File no longer exists.', 'malroot-security' ) );
+			// The file is gone. If the current official plugin version no longer
+			// ships it, the removal is expected (an update dropped it).
+			if ( self::is_expected_plugin_deletion( $rel_path ) ) {
+				return self::result( self::VERDICT_PROBABLY,
+					__( 'This file was removed and the current official plugin version no longer includes it — this is an expected update change.', 'malroot-security' )
+				);
+			}
+			// Otherwise a file that should exist is missing — likely an
+			// incomplete/interrupted update. Reinstalling restores it.
+			return self::result( self::VERDICT_UNKNOWN,
+				__( 'A file that this plugin/theme normally ships is missing. This usually means an update did not finish. Reinstall the plugin/theme to restore it — there is nothing to delete.', 'malroot-security' )
+			);
 		}
 
 		$content = self::read_code( $abs );

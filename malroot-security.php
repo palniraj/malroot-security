@@ -3,7 +3,7 @@
  * Plugin Name:       Malroot Security
  * Plugin URI:        https://github.com/palniraj/malroot-security
  * Description:       WordPress malware scanner that inspects database, files, REST routes, MySQL triggers and mu-plugins. Removes hidden admins, backdoors and rootkits.
- * Version:           1.0.7
+ * Version:           1.0.8
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Niraj Pal
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MALROOT_VERSION',     '1.0.7' );
+define( 'MALROOT_VERSION',     '1.0.8' );
 define( 'MALROOT_FILE',        __FILE__ );
 define( 'MALROOT_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'MALROOT_URL',         plugin_dir_url( __FILE__ ) );

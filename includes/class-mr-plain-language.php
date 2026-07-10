@@ -350,6 +350,24 @@ class Malroot_Plain_Language {
 		// mu-plugin findings
 		// ----------------------------------------------------------------
 		if ( $module === 'muplugins' ) {
+			// SH-007 = writes files at runtime / zero-byte stub → genuine
+			// self-healing malware pattern. SH-006 = simply not on the allowlist,
+			// which is very often a legitimate host/plugin must-use plugin.
+			if ( $rule === 'SH-006' ) {
+				return [
+					'icon'        => '🧩',
+					'title'       => __( 'Unrecognised must-use plugin', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: mu-plugin file name */
+						__( 'A must-use plugin (<code>%s</code>) is present that Malroot does not recognise. Must-use plugins load automatically. Hosts (e.g. Hostinger, WP Engine, Kinsta) and plugins (e.g. WP Staging, Installatron) legitimately place files here.', 'malroot-security' ),
+						esc_html( str_replace( 'muplugins:', '', $target ) )
+					),
+					'why_bad'     => __( 'This is only a concern if you do not recognise it. It is not, by itself, a sign of malware.', 'malroot-security' ),
+					'action'      => __( 'If it belongs to your host or a plugin you use, leave it. If you do not recognise it, view the file details before removing.', 'malroot-security' ),
+					'action_type' => 'manual',
+					'safe_to_fix' => false,
+				];
+			}
 			return [
 				'icon'        => '🔄',
 				'title'       => __( 'Self-reinstalling malware component found', 'malroot-security' ),

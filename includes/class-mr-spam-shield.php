@@ -150,14 +150,20 @@ class Malroot_Spam_Shield {
 	 * @return array { count:int, sample:array, deleted:bool }
 	 */
 	public static function cleanup_comments( $dry_run = true ) {
+		// Fetch approved + pending comments. We intentionally do NOT pass
+		// 'type' => 'comment', because that can exclude ordinary comments stored
+		// with an empty comment_type; we skip pingbacks/trackbacks in the loop.
 		$comments = get_comments( [
 			'status' => 'all',
 			'number' => 5000,
-			'type'   => 'comment',
 		] );
 
 		$matches = [];
 		foreach ( $comments as $c ) {
+			// Skip pingbacks/trackbacks — only inspect real comments.
+			if ( ! in_array( (string) $c->comment_type, [ '', 'comment' ], true ) ) {
+				continue;
+			}
 			$data = [
 				'comment_author'       => $c->comment_author,
 				'comment_author_email' => $c->comment_author_email,

@@ -4,7 +4,7 @@ Tags: security, malware, scanner, backdoor, firewall
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.7
+Stable tag: 1.0.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -133,6 +133,11 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 
 == Changelog ==
 
+= 1.0.8 =
+* Fewer false positives for must-use plugins: legitimate host and plugin drop-ins (Hostinger auto-updates/preview/onboarding, WP Staging optimizer, Installatron automation, and common WP Engine/Kinsta files) are now recognised and no longer flagged. An unrecognised mu-plugin is now shown as a low-key "review" item, not as "self-reinstalling malware" — that stronger wording is reserved for mu-plugins that actually write files at runtime or are zero-byte stubs.
+* Clearer verdict for missing files: when a plugin/theme file is gone, Malroot now distinguishes "removed by an update (expected)" from "a file that should exist is missing — reinstall the plugin/theme to restore it", instead of the ambiguous "origin unknown".
+* Comment-spam cleanup now reliably finds pending/classic comments (removed a query filter that could exclude comments stored with an empty type).
+
 = 1.0.7 =
 * Far fewer false positives after plugin, theme, and WordPress updates. File-integrity findings are now checked against the component's version: when a plugin, theme, or core version has changed, its file changes are recognised as an expected update and accepted silently instead of asking you to review them.
 * Deleted plugin files are now verified authoritatively against the official WordPress.org checksums for the installed version. If the current version no longer ships a file, its removal is accepted automatically — this clears the large lists of "file deleted" notices seen after updating WooCommerce, Google Site Kit, Yoast SEO and similar plugins.
@@ -192,6 +197,9 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 * CSV export, "Ignore finding" workflow, and self-integrity check.
 
 == Upgrade Notice ==
+
+= 1.0.8 =
+Recognises legitimate host/plugin must-use plugins (Hostinger, WP Staging, Installatron, etc.) so they are no longer flagged as malware, gives clearer guidance for missing files, and fixes comment-spam cleanup so it reliably finds pending comments.
 
 = 1.0.7 =
 Far fewer false positives after updates: integrity checks now use plugin/theme/core versions and official WordPress.org checksums. Adds comment-spam blocking and cleanup, configurable plain-language alerts, and safer review actions.
