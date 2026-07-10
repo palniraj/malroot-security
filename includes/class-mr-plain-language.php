@@ -310,16 +310,37 @@ class Malroot_Plain_Language {
 		// REST API findings
 		// ----------------------------------------------------------------
 		if ( $module === 'rest' ) {
+			$ns = esc_html( str_replace( 'rest:', '', $target ) );
+
+			// RT-007: the endpoint belongs to a plugin the site actually has
+			// installed. Low priority, reassuring wording.
+			if ( $rule === 'RT-007' ) {
+				return [
+					'icon'        => '🔌',
+					'title'       => __( 'Installed plugin exposes a sensitive API endpoint', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: namespace */
+						__( 'The API endpoint <code>%s</code> belongs to one of your installed, active plugins. It handles sensitive actions, so we list it here for your awareness.', 'malroot-security' ),
+						$ns
+					),
+					'why_bad'     => __( 'This is not a sign of a hack. It only matters if you no longer trust or use the plugin that owns this endpoint.', 'malroot-security' ),
+					'action'      => __( 'No action needed unless you do not recognise the plugin. Keep it updated to the latest version.', 'malroot-security' ),
+					'action_type' => 'info',
+					'safe_to_fix' => false,
+				];
+			}
+
+			// RT-001 / RT-006: namespace could NOT be matched to any installed plugin.
 			return [
 				'icon'        => '🔌',
-				'title'       => __( 'Unusual plugin API endpoint detected', 'malroot-security' ),
+				'title'       => __( 'Unknown API endpoint not linked to any installed plugin', 'malroot-security' ),
 				'what'        => sprintf(
 					/* translators: %s: namespace */
-					__( 'A plugin has registered an API endpoint called <code>%s</code> that is not from a recognised plugin.', 'malroot-security' ),
-					esc_html( str_replace( 'rest:', '', $target ) )
+					__( 'An API endpoint called <code>%s</code> is registered on your site, but it does not match any plugin you have installed.', 'malroot-security' ),
+					$ns
 				),
-				'why_bad'     => __( 'Malicious plugins sometimes create hidden API endpoints that let attackers control your site remotely without needing to log in.', 'malroot-security' ),
-				'action'      => __( 'Check your installed plugins list. If you see any plugin you did not install, deactivate and delete it immediately.', 'malroot-security' ),
+				'why_bad'     => __( 'Malicious code sometimes creates hidden API endpoints that let attackers control your site remotely without logging in. Because this one has no matching plugin, it is worth checking.', 'malroot-security' ),
+				'action'      => __( 'Review your installed plugins. If you cannot account for this endpoint, treat your site as possibly compromised and run a full scan and cleanup.', 'malroot-security' ),
 				'action_type' => 'manual',
 				'safe_to_fix' => false,
 			];

@@ -15,9 +15,159 @@ class Malroot_Baseline {
 
 	const TABLE = 'malroot_baseline';
 
+	/** Option storing the plugin/theme/core versions captured at baseline time. */
+	const VERSIONS_OPT = 'malroot_baseline_versions';
+
 	public static function table() {
 		global $wpdb;
 		return $wpdb->prefix . self::TABLE;
+	}
+
+	/* ---------------------------------------------------------------- */
+	/*  Component version tracking (update-churn suppression)           */
+	/* ---------------------------------------------------------------- */
+
+	/**
+	 * Snapshot the installed version of WordPress core and every plugin/theme.
+	 * Keyed as 'core', 'plugin:{slug}', 'theme:{slug}'.
+	 */
+	public static function capture_versions() {
+		$versions = [ 'core' => get_bloginfo( 'version' ) ];
+
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		foreach ( get_plugins() as $file => $data ) {
+			$slug = strtok( (string) $file, '/' );
+			if ( $slug ) {
+				$versions[ 'plugin:' . $slug ] = (string) ( $data['Version'] ?? '' );
+			}
+		}
+
+		if ( function_exists( 'wp_get_themes' ) ) {
+			foreach ( wp_get_themes() as $slug => $theme ) {
+				$versions[ 'theme:' . $slug ] = (string) $theme->get( 'Version' );
+			}
+		}
+
+		return $versions;
+	}
+
+	/** Persist the current component versions as the accepted baseline (used on full rebuild). */
+	public static function sync_versions() {
+		update_option( self::VERSIONS_OPT, self::capture_versions(), false );
+	}
+
+	/**
+	 * After a scan, advance the recorded version only for components whose
+	 * version actually changed (their update churn was just accepted) and
+	 * register any newly installed components. Components with an unchanged
+	 * version keep their recorded version, so tampering within the SAME version
+	 * still surfaces on the next scan. Does nothing if no baseline versions were
+	 * ever captured — that requires a full snapshot first.
+	 */
+	public static function reconcile_versions() {
+		$base = self::get_baseline_versions();
+		if ( empty( $base ) ) {
+			return;
+		}
+		$current = self::capture_versions();
+		$changed = false;
+		foreach ( $current as $key => $ver ) {
+			if ( ! array_key_exists( $key, $base ) || $base[ $key ] !== $ver ) {
+				$base[ $key ] = $ver;
+				$changed = true;
+			}
+		}
+		if ( $changed ) {
+			update_option( self::VERSIONS_OPT, $base, false );
+		}
+	}
+
+	public static function get_baseline_versions() {
+		return (array) get_option( self::VERSIONS_OPT, [] );
+	}
+
+	/**
+	 * Paths WordPress manages automatically, where churn is expected and benign:
+	 *   - wp-content/languages: translation files updated by core/plugins/themes
+	 *   - wp-content/upgrade:   temporary files during updates
+	 * Changes here are never a meaningful attack signal on their own.
+	 */
+	public static function is_auto_managed_path( $rel_path ) {
+		return (bool) preg_match( '#^wp-content/(languages|upgrade)/#', $rel_path );
+	}
+
+	/** Which component (core/plugin/theme) does a relative path belong to? */
+	public static function component_key( $rel_path ) {
+		if ( preg_match( '#^wp-content/plugins/([^/]+)/#', $rel_path, $m ) ) {
+			return 'plugin:' . $m[1];
+		}
+		if ( preg_match( '#^wp-content/themes/([^/]+)/#', $rel_path, $m ) ) {
+			return 'theme:' . $m[1];
+		}
+		if ( preg_match( '#^wp-(admin|includes)/#', $rel_path ) ) {
+			return 'core';
+		}
+		// Core root files (index.php, wp-load.php, …) with no directory prefix.
+		if ( false === strpos( $rel_path, '/' ) && preg_match( '/\.php$/i', $rel_path ) ) {
+			return 'core';
+		}
+		return null;
+	}
+
+	/** Current installed version for a component key, or '' if unknown. */
+	private static function current_version( $key ) {
+		if ( 'core' === $key ) {
+			return get_bloginfo( 'version' );
+		}
+		if ( 0 === strpos( $key, 'plugin:' ) ) {
+			$slug = substr( $key, 7 );
+			if ( ! function_exists( 'get_plugins' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+			foreach ( get_plugins() as $file => $data ) {
+				if ( strtok( (string) $file, '/' ) === $slug ) {
+					return (string) ( $data['Version'] ?? '' );
+				}
+			}
+			return '';
+		}
+		if ( 0 === strpos( $key, 'theme:' ) ) {
+			$slug  = substr( $key, 6 );
+			$theme = wp_get_theme( $slug );
+			return $theme->exists() ? (string) $theme->get( 'Version' ) : '';
+		}
+		return '';
+	}
+
+	/**
+	 * Is a file change explained by a legitimate version update of the plugin,
+	 * theme, or core it belongs to? If the component's version differs from the
+	 * one recorded at baseline time, the change is expected update churn — not
+	 * tampering — and should be accepted silently.
+	 *
+	 * Returns false when we cannot be sure (unknown component, no recorded
+	 * version), so the change still gets reviewed rather than blindly trusted.
+	 */
+	public static function is_expected_update_change( $rel_path ) {
+		// WordPress-managed churn (translations, upgrade temp files).
+		if ( self::is_auto_managed_path( $rel_path ) ) {
+			return true;
+		}
+		$key = self::component_key( $rel_path );
+		if ( ! $key ) {
+			return false;
+		}
+		$base = self::get_baseline_versions();
+		if ( empty( $base ) || ! array_key_exists( $key, $base ) ) {
+			return false; // component wasn't recorded at baseline — be cautious
+		}
+		$current = self::current_version( $key );
+		if ( '' === $current ) {
+			return false;
+		}
+		return $current !== (string) $base[ $key ];
 	}
 
 	public static function exists() {
@@ -51,6 +201,9 @@ class Malroot_Baseline {
 			$count++;
 		}
 		update_option( 'malroot_baseline_built', current_time( 'mysql' ), false );
+		// Record the versions of everything we just accepted, so future scans can
+		// tell "this changed because of an update" apart from "this was tampered with".
+		self::sync_versions();
 		// Mark any open integrity findings as fixed since we just accepted the current state
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( "UPDATE {$wpdb->prefix}malroot_findings SET status='fixed' WHERE module='integrity' AND status='open'" );

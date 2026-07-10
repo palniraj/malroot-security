@@ -4,7 +4,7 @@ Tags: security, malware, scanner, backdoor, firewall
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.6
+Stable tag: 1.0.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -133,6 +133,19 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 
 == Changelog ==
 
+= 1.0.7 =
+* Far fewer false positives after plugin, theme, and WordPress updates. File-integrity findings are now checked against the component's version: when a plugin, theme, or core version has changed, its file changes are recognised as an expected update and accepted silently instead of asking you to review them.
+* Deleted plugin files are now verified authoritatively against the official WordPress.org checksums for the installed version. If the current version no longer ships a file, its removal is accepted automatically — this clears the large lists of "file deleted" notices seen after updating WooCommerce, Google Site Kit, Yoast SEO and similar plugins.
+* WordPress-managed paths (`wp-content/languages`, `wp-content/upgrade`) are treated as expected churn, so translation-file updates no longer appear as findings.
+* Improved code analysis for files with no official checksum (themes, custom code): the verifier now reads the file and reports in plain language whether it contains suspicious patterns, so clean files are no longer pushed toward deletion. Fixed a `preg_replace` heuristic that misfired on legitimate theme code.
+* Authoritative checks now run before content heuristics, fixing false "malware pattern" flags on legitimate plugin files (e.g. LiteSpeed Cache, Jetpack).
+* Safer review actions: a modified core/plugin/theme file now recommends reinstalling the official copy instead of deleting it, and already-deleted files no longer show a "remove" button.
+* REST endpoints registered by installed, active plugins are correctly attributed and no longer flagged as "unknown" — including WooCommerce family namespaces such as `wc-push-notifications` and `wc-shipstation`, plus Jetpack, LiteSpeed and others.
+* Incident Response now also removes dormant injected administrators detected by signature (duplicate login name, no email address, generic wordpress.com profile URL), not just known bad names — with safeguards that never remove you or the last administrator.
+* New: block and clean up comment spam. Bot comments (fake "TikTok"/"BBC Post" style) can be blocked before they are stored, and a Spam Cleanup tool moves existing spam comments to Trash. Blocking a spam comment also denies the malicious after_insert_comment trigger its input.
+* Alerting is now configurable and written in plain language: choose which severities are emailed, turn routine login-activity notifications on or off (off by default), and receive human-readable emails instead of technical dumps.
+* UI: the admin screens now use the full width of the page, and fixed the icon alignment on the "Run cleanup now" button.
+
 = 1.0.6 =
 * Privacy: Two-Factor Authentication no longer sends the TOTP secret to an external QR-code image service (api.qrserver.com). The setup key is now shown as text for manual entry into any authenticator app, so the secret never leaves your server.
 * Privacy: IP geolocation (ipapi.co) is now strictly opt-in and OFF by default. No IP address is sent anywhere unless an administrator enables "IP geolocation" on the Settings page.
@@ -179,6 +192,9 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 * CSV export, "Ignore finding" workflow, and self-integrity check.
 
 == Upgrade Notice ==
+
+= 1.0.7 =
+Big reduction in false positives after updates: file-integrity findings are now checked against plugin/theme/core versions and official WordPress.org checksums, so routine update changes and deletions no longer clutter the results. Adds comment-spam blocking and cleanup, configurable plain-language alerts, safer review actions, and full-width admin screens.
 
 = 1.0.6 =
 Privacy fixes for WordPress.org compliance: 2FA setup no longer sends your secret to an external QR service, IP geolocation is now opt-in and off by default, and quarantined files are backed up to the database instead of the uploads folder.

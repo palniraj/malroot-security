@@ -51,6 +51,12 @@ class Malroot_Login_Security {
 		return (int) ( $s['login_threshold'] ?? 5 );
 	}
 
+	/** Whether the operator wants routine login-activity notifications. Off by default. */
+	private static function login_activity_alerts_enabled() {
+		$s = (array) get_option( 'malroot_settings', [] );
+		return ! empty( $s['alert_login_activity'] );
+	}
+
 	/* ---------------------------------------------------------------- */
 	/*  Recording                                                       */
 	/* ---------------------------------------------------------------- */
@@ -72,8 +78,12 @@ class Malroot_Login_Security {
 				);
 			}
 
-			// Geo / ASN delta check — alert when admin logs in from a new IP block
-			if ( self::is_new_login_origin( $user->ID, $ip ) ) {
+			// Geo / ASN delta check — note when an admin logs in from a new IP
+			// block. This is routine informational activity (not a sign of a
+			// hack), so it is only recorded when the operator has opted in to
+			// login-activity notifications. Keeps the Alerts log focused on
+			// genuine threats by default.
+			if ( self::login_activity_alerts_enabled() && self::is_new_login_origin( $user->ID, $ip ) ) {
 				$geo = Malroot_GeoIP::lookup( $ip );
 				$location = $geo ? trim( ( $geo['city'] ? $geo['city'] . ', ' : '' ) . $geo['country_name'] ) : 'unknown location';
 				Malroot_Alerting::alert(

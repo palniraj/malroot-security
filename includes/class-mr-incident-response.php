@@ -104,8 +104,17 @@ class Malroot_Incident_Response {
 
 	private static function remove_known_bad_users() {
 		global $wpdb;
-		$bad = [ 'newsfeed', 'system_control', 'wpadmin', 'wordpress_administrator', 'wp_admin', 'acfmain', 'defino' ];
+		// Aligned with Admin Guard / real-time blocklists so a name caught there
+		// is also cleaned up here.
+		$bad = [
+			'newsfeed', 'newsfood', 'wp_feed', 'wppanel', 'wp-panel',
+			'system_control', 'system-control', 'wpadmin',
+			'wordpress_administrator', 'wp_admin', 'acfmain', 'defino', 'adminwp',
+		];
 		$removed = [];
+		$seen    = [];
+
+		// Pass 1: known malware login names (exact match).
 		foreach ( $bad as $login ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$ids = $wpdb->get_col( $wpdb->prepare(
@@ -113,20 +122,90 @@ class Malroot_Incident_Response {
 				$login
 			) );
 			foreach ( $ids as $id ) {
-				if ( get_current_user_id() === (int) $id ) {
-					$removed[] = [ 'user' => $login, 'id' => $id, 'result' => 'skipped (self)' ];
-					continue;
+				$res = self::quarantine_rogue_admin( (int) $id, $login, 'known malware login name' );
+				if ( $res ) {
+					$seen[ (int) $id ] = true;
+					$removed[] = $res;
 				}
-				$finding_id = self::synthesise_user_finding( $login, (int) $id );
-				$result = Malroot_Quarantine::quarantine_finding( $finding_id );
-				$removed[] = [
-					'user'   => $login,
-					'id'     => (int) $id,
-					'result' => is_wp_error( $result ) ? $result->get_error_message() : 'quarantined',
-				];
 			}
 		}
+
+		// Pass 2: signature-based. Catches dormant admins injected by SQL/trigger
+		// that never used a known name — e.g. the duplicate 'archiveprofile'
+		// accounts and 'wp_feed' with no email. These bypass the login-name list
+		// entirely, which is why they survived earlier cleanups.
+		//
+		// A signature match is any administrator that is NOT on the approved
+		// allowlist AND shows a hallmark of injection:
+		//   - a login name shared by more than one account, or
+		//   - no real email address, or
+		//   - a generic https://wordpress.com profile URL.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$dupe_logins = $wpdb->get_col(
+			"SELECT user_login FROM {$wpdb->users} GROUP BY user_login HAVING COUNT(*) > 1"
+		);
+		$dupe_logins = array_map( 'strtolower', (array) $dupe_logins );
+
+		$admins    = get_users( [ 'role' => 'administrator' ] );
+		$guard_on  = class_exists( 'Malroot_Admin_Guard' );
+		foreach ( $admins as $u ) {
+			$id = (int) $u->ID;
+			if ( isset( $seen[ $id ] ) ) {
+				continue;
+			}
+
+			// Never touch an operator-approved administrator.
+			if ( $guard_on && Malroot_Admin_Guard::is_approved( $u ) ) {
+				continue;
+			}
+
+			$signatures = [];
+			if ( in_array( strtolower( $u->user_login ), $dupe_logins, true ) ) {
+				$signatures[] = 'duplicate login name';
+			}
+			if ( empty( $u->user_email ) || $u->user_email === 'admin@example.com' ) {
+				$signatures[] = 'no real email address';
+			}
+			if ( $u->user_url === 'https://wordpress.com' && false === strpos( home_url(), 'wordpress.com' ) ) {
+				$signatures[] = 'generic wordpress.com profile URL';
+			}
+
+			if ( empty( $signatures ) ) {
+				continue;
+			}
+
+			$res = self::quarantine_rogue_admin( $id, $u->user_login, implode( ', ', $signatures ) );
+			if ( $res ) {
+				$removed[] = $res;
+			}
+		}
+
 		return $removed;
+	}
+
+	/**
+	 * Quarantine a single rogue administrator (reversible). Refuses to remove
+	 * the currently-logged-in user or the last remaining administrator, so the
+	 * operator can never lock themselves out.
+	 */
+	private static function quarantine_rogue_admin( $id, $login, $reason ) {
+		if ( get_current_user_id() === (int) $id ) {
+			return [ 'user' => $login, 'id' => (int) $id, 'result' => 'skipped (this is you)' ];
+		}
+
+		$admin_count = count( get_users( [ 'role' => 'administrator', 'fields' => 'ID' ] ) );
+		if ( $admin_count <= 1 ) {
+			return [ 'user' => $login, 'id' => (int) $id, 'result' => 'skipped (last administrator — removed nothing to avoid lockout)' ];
+		}
+
+		$finding_id = self::synthesise_user_finding( $login, (int) $id );
+		$result     = Malroot_Quarantine::quarantine_finding( $finding_id );
+		return [
+			'user'   => $login,
+			'id'     => (int) $id,
+			'reason' => $reason,
+			'result' => is_wp_error( $result ) ? $result->get_error_message() : 'quarantined',
+		];
 	}
 
 	private static function synthesise_user_finding( $login, $id ) {

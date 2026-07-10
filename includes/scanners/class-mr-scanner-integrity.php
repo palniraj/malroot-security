@@ -35,14 +35,17 @@ class Malroot_Scanner_Integrity extends Malroot_Scanner_Base {
 				Malroot_Baseline::add_to_baseline( $rel );
 				continue;
 			}
-			// Verify the file. If it matches an official checksum, silently update the baseline.
+			// Verify the file. Malware always wins, regardless of version.
 			$verdict = Malroot_Verifier::verify( $rel );
-			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_SAFE ) {
-				Malroot_Baseline::add_to_baseline( $rel );
-				continue; // No finding — this is a legitimate update
-			}
 			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_MALICIOUS ) {
 				$this->record( 'INT-NEW', 'critical', $rel, $verdict['reason'], $verdict['evidence'] );
+				continue;
+			}
+			// Official checksum match, or the owning plugin/theme/core was updated
+			// (its version changed) → this is legitimate update churn. Accept it.
+			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_SAFE
+				|| Malroot_Baseline::is_expected_update_change( $rel ) ) {
+				Malroot_Baseline::add_to_baseline( $rel );
 				continue;
 			}
 
@@ -60,12 +63,15 @@ class Malroot_Scanner_Integrity extends Malroot_Scanner_Base {
 				continue;
 			}
 			$verdict = Malroot_Verifier::verify( $rel );
-			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_SAFE ) {
-				Malroot_Baseline::add_to_baseline( $rel );
-				continue;
-			}
 			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_MALICIOUS ) {
 				$this->record( 'INT-MOD', 'critical', $rel, $verdict['reason'], $verdict['evidence'] );
+				continue;
+			}
+			// Official checksum match, or the owning component's version changed
+			// (legitimate update) → accept silently.
+			if ( $verdict['verdict'] === Malroot_Verifier::VERDICT_SAFE
+				|| Malroot_Baseline::is_expected_update_change( $rel ) ) {
+				Malroot_Baseline::add_to_baseline( $rel );
 				continue;
 			}
 
@@ -79,13 +85,23 @@ class Malroot_Scanner_Integrity extends Malroot_Scanner_Base {
 			$this->record( 'INT-MOD', $severity, $rel, 'File modified since last baseline', '' );
 		}
 
-		// Deleted files: low severity (legitimate plugin uninstalls are common)
-		foreach ( array_slice( $diff['deleted'], 0, 500 ) as $rel ) {
-			if ( strpos( $rel, 'wp-content/plugins/malroot-security/' ) !== false ) {
+		// Deleted files. An update that removes old files is the most common
+		// cause. We can confirm this authoritatively for WordPress.org plugins
+		// (the file isn't in the current official version), or by version change
+		// for any component. Only flag deletions we genuinely can't explain.
+		foreach ( array_slice( $diff['deleted'], 0, 2000 ) as $rel ) {
+			if ( strpos( $rel, 'wp-content/plugins/malroot-security/' ) !== false
+				|| Malroot_Baseline::is_expected_update_change( $rel )
+				|| Malroot_Verifier::is_expected_plugin_deletion( $rel ) ) {
 				Malroot_Baseline::remove_from_baseline( $rel );
 				continue;
 			}
 			$this->record( 'INT-DEL', 'low', $rel, 'File deleted since last baseline', '' );
 		}
+
+		// Advance recorded versions for components that were just updated (whose
+		// churn we accepted above), so future scans resume tamper detection for
+		// them. Never touches unchanged components.
+		Malroot_Baseline::reconcile_versions();
 	}
 }
