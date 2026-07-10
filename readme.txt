@@ -194,7 +194,7 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 == Upgrade Notice ==
 
 = 1.0.7 =
-Big reduction in false positives after updates: file-integrity findings are now checked against plugin/theme/core versions and official WordPress.org checksums, so routine update changes and deletions no longer clutter the results. Adds comment-spam blocking and cleanup, configurable plain-language alerts, safer review actions, and full-width admin screens.
+Far fewer false positives after updates: integrity checks now use plugin/theme/core versions and official WordPress.org checksums. Adds comment-spam blocking and cleanup, configurable plain-language alerts, and safer review actions.
 
 = 1.0.6 =
 Privacy fixes for WordPress.org compliance: 2FA setup no longer sends your secret to an external QR service, IP geolocation is now opt-in and off by default, and quarantined files are backed up to the database instead of the uploads folder.
