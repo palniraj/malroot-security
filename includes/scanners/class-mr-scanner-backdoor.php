@@ -56,11 +56,28 @@ class Malroot_Scanner_Backdoor extends Malroot_Scanner_Base {
 		$this->check_plugin_slugs();
 	}
 
+	/**
+	 * Directories to walk.
+	 *
+	 * WordPress core directories are included deliberately. This scanner
+	 * originally covered wp-content only, and on cityagecare.com a second copy
+	 * of the obfuscated payload was sitting at
+	 * wp-includes/SimplePie/library/SimplePie/Files.php — byte-identical to the
+	 * one in the fake plugin folder, 3.8 MB where the real SimplePie file is
+	 * about 15 KB. It went unreported because nothing looked there, which is
+	 * precisely why attackers choose core directories: the path looks
+	 * unimpeachable and most scanners skip it.
+	 *
+	 * Core is cheap to check here because the expensive rules are keyed to
+	 * behaviour, not to reading every byte of every file.
+	 */
 	private function roots() {
 		$roots = [ WP_CONTENT_DIR . '/plugins', WP_CONTENT_DIR . '/themes' ];
 		if ( defined( 'WPMU_PLUGIN_DIR' ) ) {
 			$roots[] = WPMU_PLUGIN_DIR;
 		}
+		$roots[] = ABSPATH . 'wp-admin';
+		$roots[] = ABSPATH . WPINC;
 		return $roots;
 	}
 
@@ -102,18 +119,47 @@ class Malroot_Scanner_Backdoor extends Malroot_Scanner_Base {
 				continue;
 			}
 
-			$rel     = $this->relpath( $path );
-			$is_lib  = $this->is_library_path( $path );
+			$rel = $this->relpath( $path );
 
-			$this->check_admin_factory( $rel, $code );
-			$this->check_user_list_hiding( $rel, $code );
-			$this->check_plugin_list_hiding( $rel, $code );
-			$this->check_anti_analysis( $rel, $code );
-			$this->check_remote_file_control( $rel, $code, $is_lib );
+			// Vendored libraries and WordPress core are both known-good code
+			// bases. The heuristic rules (hex density, request-driven file
+			// operations, dynamic execution) produce noise against them —
+			// wp-includes/functions.php, class-wpdb.php, PHPMailer and the ID3
+			// parsers all legitimately contain hundreds of \xNN escapes, and a
+			// scanner that flags those is worse than no scanner at all.
+			//
+			// Only the unambiguous rules run against them: an obfuscator banner
+			// and a chunk-assembled encoded payload. That pair is what exposed
+			// the plant in wp-includes/SimplePie, so nothing is lost.
+			$is_core = $this->is_core_path( $path );
+			$is_lib  = $this->is_library_path( $path ) || $is_core;
+
+			// These rules describe what a rogue PLUGIN does. WordPress itself
+			// legitimately does all three — wp-admin/includes/upgrade.php
+			// creates the first administrator, class-wp-user-query.php builds
+			// the user query, ajax-actions.php maintains the plugin list — so
+			// running them against core produces confident nonsense. Core
+			// tampering is the integrity scanner's job, which compares against
+			// the official release rather than guessing from behaviour.
+			if ( ! $is_core ) {
+				$this->check_admin_factory( $rel, $code );
+				$this->check_user_list_hiding( $rel, $code );
+				$this->check_plugin_list_hiding( $rel, $code );
+				$this->check_anti_analysis( $rel, $code );
+				$this->check_remote_file_control( $rel, $code, $is_lib );
+			}
+
+			// The obfuscation check runs everywhere, including vendored
+			// libraries. An explicit obfuscator banner is unambiguous — no
+			// legitimate library is shipped through bypass.pw — and skipping
+			// library paths is exactly how a 3.8 MB payload hid inside
+			// wp-includes/SimplePie. Only the heuristic parts of that check
+			// respect the library exclusion, since real cryptography code does
+			// contain long hex runs.
+			$this->check_obfuscation( $rel, $code, $is_lib );
 
 			if ( ! $is_lib ) {
 				$this->check_dynamic_execution( $rel, $code );
-				$this->check_obfuscation( $rel, $code );
 			}
 		}
 	}
@@ -259,9 +305,16 @@ class Malroot_Scanner_Backdoor extends Malroot_Scanner_Base {
 		);
 	}
 
-	/** BD-005 / BD-006 — deliberate obfuscation. */
-	private function check_obfuscation( $rel, $code ) {
-		// Known obfuscator banners.
+	/**
+	 * BD-005 / BD-006 — deliberate obfuscation.
+	 *
+	 * @param string $rel    Relative path.
+	 * @param string $code   File head.
+	 * @param bool   $is_lib Whether this is a vendored library, in which case
+	 *                       only the unambiguous banner check applies.
+	 */
+	private function check_obfuscation( $rel, $code, $is_lib = false ) {
+		// Known obfuscator banners. Always checked.
 		if ( preg_match( '/(Smart Obfuscator|bypass\.pw|Obfuscated by|FOPO|phpjiami|Obfuskasi)/i', $code, $m ) ) {
 			$this->record(
 				'BD-006',
@@ -273,6 +326,25 @@ class Malroot_Scanner_Backdoor extends Malroot_Scanner_Base {
 			return;
 		}
 
+		// Long base64 built by concatenation, then decoded. Runs everywhere:
+		// assembling a payload chunk by chunk is not something a real library
+		// does, and this is the shape the wp-includes/SimplePie plant used.
+		if ( preg_match_all( '/\$[a-z_][a-z0-9_]*\s*\.=\s*[\'"][A-Za-z0-9+\/=]{3,}[\'"]\s*;/i', $code ) >= 20
+			&& preg_match( '/base64_decode|gzinflate|gzuncompress|str_rot13/i', $code ) ) {
+			$this->record(
+				'BD-005',
+				'critical',
+				$rel,
+				'A large encoded payload is assembled piece by piece and then decoded at run time',
+				'pattern=chunked base64 assembly'
+			);
+			return;
+		}
+
+		if ( $is_lib ) {
+			return; // remaining checks are heuristic; real crypto code trips them
+		}
+
 		// Dense hex escapes: legitimate code uses a handful, obfuscators use many.
 		$hex = preg_match_all( '/\\\\x[0-9a-f]{2}/i', $code );
 		if ( $hex >= 40 ) {
@@ -282,19 +354,6 @@ class Malroot_Scanner_Backdoor extends Malroot_Scanner_Base {
 				$rel,
 				"Function names in this file are written as {$hex} hex escape codes, which hides them from security scanners",
 				'hex_escape_count=' . $hex
-			);
-			return;
-		}
-
-		// Long base64 built by concatenation, then decoded.
-		if ( preg_match_all( '/\$[a-z_][a-z0-9_]*\s*\.=\s*[\'"][A-Za-z0-9+\/=]{3,}[\'"]\s*;/i', $code ) >= 20
-			&& preg_match( '/base64_decode|gzinflate|gzuncompress|str_rot13/i', $code ) ) {
-			$this->record(
-				'BD-005',
-				'high',
-				$rel,
-				'A large encoded payload is assembled piece by piece and then decoded at run time',
-				'pattern=chunked base64 assembly'
 			);
 		}
 	}
@@ -522,6 +581,17 @@ class Malroot_Scanner_Backdoor extends Malroot_Scanner_Base {
 	private function is_library_path( $path ) {
 		foreach ( self::$library_paths as $needle ) {
 			if ( false !== stripos( $path, $needle ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Inside wp-admin or wp-includes. */
+	private function is_core_path( $path ) {
+		$p = wp_normalize_path( $path );
+		foreach ( [ ABSPATH . 'wp-admin/', ABSPATH . WPINC . '/' ] as $dir ) {
+			if ( 0 === strpos( $p, wp_normalize_path( $dir ) ) ) {
 				return true;
 			}
 		}
