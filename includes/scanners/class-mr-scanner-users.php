@@ -85,6 +85,7 @@ class Malroot_Scanner_Users extends Malroot_Scanner_Base {
 		}
 
 		$this->check_registration_burst( $admins );
+		$this->check_disabled_leftovers();
 
 		foreach ( $admins as $u ) {
 			$label = "users:{$u->user_login}#{$u->ID}";
@@ -220,6 +221,54 @@ class Malroot_Scanner_Users extends Malroot_Scanner_Base {
 				"users:{$d->user_login}",
 				"Duplicate user_login '{$d->user_login}' ({$d->c} rows) — only possible via direct DB or trigger injection",
 				''
+			);
+		}
+	}
+
+	/**
+	 * Accounts Malroot has already stripped of their role but which still exist.
+	 *
+	 * Admin Guard neutralises a rogue administrator by removing its role, which
+	 * stops it immediately. The account itself stays until it is deleted. Because
+	 * it is no longer an administrator, none of the rules above look at it, so a
+	 * later scan reported the site clean while the account sat in the Users list
+	 * showing role "None" and no email. That is alarming to find by hand and it
+	 * leaves something an attacker could try to re-elevate.
+	 */
+	private function check_disabled_leftovers() {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT u.ID, u.user_login, u.user_email, m.meta_value AS disabled_at
+			   FROM {$wpdb->usermeta} m
+			   INNER JOIN {$wpdb->users} u ON u.ID = m.user_id
+			  WHERE m.meta_key = %s
+			  ORDER BY u.ID",
+			'malroot_neutralized'
+		) );
+
+		foreach ( (array) $rows as $r ) {
+			$u = get_userdata( (int) $r->ID );
+			if ( ! $u ) {
+				continue;
+			}
+			// If the operator has since approved it, this is settled.
+			if ( class_exists( 'Malroot_Admin_Guard' ) && Malroot_Admin_Guard::is_approved( $u ) ) {
+				continue;
+			}
+			$this->record(
+				'UA-007',
+				'medium',
+				"users:{$u->user_login}#{$u->ID}",
+				'Account was disabled by Malroot but has not been deleted yet',
+				sprintf(
+					'user_id=%d; user_login=%s; disabled_at=%s; current_roles=%s',
+					(int) $u->ID,
+					$u->user_login,
+					$r->disabled_at,
+					$u->roles ? implode( ',', (array) $u->roles ) : '(none)'
+				)
 			);
 		}
 	}

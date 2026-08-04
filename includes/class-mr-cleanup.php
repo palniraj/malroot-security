@@ -419,10 +419,20 @@ class Malroot_Cleanup {
 	/* ================================================================== */
 
 	/**
-	 * Every administrator that is not on the approved allowlist.
+	 * Accounts that need removing: unapproved administrators, plus any account
+	 * Malroot has already stripped of its role.
 	 *
-	 * Read from usermeta rather than get_users(), because the backdoor filtered
-	 * pre_user_query to hide its own account from the API.
+	 * Two passes are needed, and the second one matters more than it looks.
+	 * Admin Guard's sweep neutralises a rogue admin by setting its role to ''.
+	 * A search for administrators therefore no longer finds it, so a cleanup run
+	 * afterwards walked straight past the account and left it on the site
+	 * forever — visible in the Users list with role "None" and no email, which
+	 * looks exactly like an unfinished cleanup. The account is inert once its
+	 * capabilities are gone, but leaving it is both confusing and an invitation
+	 * to re-elevate it later.
+	 *
+	 * Roles are read from usermeta rather than get_users(), because malware can
+	 * filter pre_user_query to hide its account from the API.
 	 */
 	private static function find_rogue_admins() {
 		if ( ! class_exists( 'Malroot_Admin_Guard' ) || ! get_option( 'malroot_admin_guard_seeded' ) ) {
@@ -431,7 +441,11 @@ class Malroot_Cleanup {
 
 		global $wpdb;
 		$cap_key = $wpdb->get_blog_prefix() . 'capabilities';
+		$current = get_current_user_id();
+		$out     = [];
+		$seen    = [];
 
+		// Pass 1 — administrators that are not on the allowlist.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT u.ID FROM {$wpdb->users} u
@@ -442,23 +456,50 @@ class Malroot_Cleanup {
 			'%administrator%'
 		) );
 
-		$current = get_current_user_id();
-		$out     = [];
-
 		foreach ( $ids as $id ) {
 			$id = (int) $id;
 			$u  = get_userdata( $id );
 			if ( ! $u || Malroot_Admin_Guard::is_approved( $u ) ) {
 				continue;
 			}
+			$seen[ $id ] = true;
 			$out[] = [
-				'id'      => $id,
-				'login'   => $u->user_login,
-				'email'   => $u->user_email,
-				'target'  => "users:{$u->user_login}#{$id}",
-				'skip'    => $id === $current ? 'this is you' : '',
+				'id'     => $id,
+				'login'  => $u->user_login,
+				'email'  => $u->user_email,
+				'target' => "users:{$u->user_login}#{$id}",
+				'reason' => __( 'Administrator not on the approved list', 'malroot-security' ),
+				'skip'   => $id === $current ? 'this is you' : '',
 			];
 		}
+
+		// Pass 2 — leftovers Malroot itself already judged rogue and demoted.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+		$neutralised = $wpdb->get_col( $wpdb->prepare(
+			"SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = %s",
+			'malroot_neutralized'
+		) );
+
+		foreach ( $neutralised as $id ) {
+			$id = (int) $id;
+			if ( isset( $seen[ $id ] ) ) {
+				continue;
+			}
+			$u = get_userdata( $id );
+			if ( ! $u || Malroot_Admin_Guard::is_approved( $u ) ) {
+				continue; // re-approved since: leave it alone
+			}
+			$seen[ $id ] = true;
+			$out[] = [
+				'id'     => $id,
+				'login'  => $u->user_login,
+				'email'  => $u->user_email,
+				'target' => "users:{$u->user_login}#{$id}",
+				'reason' => __( 'Account was already disabled by Malroot and is still on the site', 'malroot-security' ),
+				'skip'   => $id === $current ? 'this is you' : '',
+			];
+		}
+
 		return $out;
 	}
 
@@ -493,7 +534,7 @@ class Malroot_Cleanup {
 				$done[] = [ 'login' => $c['login'], 'result' => 'skipped (' . $c['skip'] . ')' ];
 				continue;
 			}
-			$fid = self::synthesise_finding( 'CU-USER', $c['target'], __( 'Administrator not on the approved list', 'malroot-security' ) );
+			$fid = self::synthesise_finding( 'CU-USER', $c['target'], $c['reason'] );
 			$res = Malroot_Quarantine::quarantine_finding( $fid );
 			$done[] = [
 				'login'  => $c['login'],

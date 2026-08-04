@@ -210,6 +210,21 @@ class Malroot_Plain_Language {
 					'safe_to_fix' => true,
 				];
 			}
+			if ( $rule === 'UA-007' ) {
+				return [
+					'icon'        => '🚫',
+					'title'       => __( 'Disabled account still needs deleting', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: username */
+						__( 'Malroot already took away all of <strong>%s</strong>\'s permissions, so it cannot do anything. The account itself is still on your site.', 'malroot-security' ),
+						$who
+					),
+					'why_bad'     => __( 'It is harmless as it stands, which is why it was left rather than deleted straight away. It is worth finishing the job: an empty account with no email is confusing to find later, and it is one less thing for an attacker to try to switch back on.', 'malroot-security' ),
+					'action'      => __( 'Click "Remove Account" to delete it for good. If it turns out to belong to someone you trust, add them in Malroot > Settings and give them their role back instead.', 'malroot-security' ),
+					'action_type' => 'quarantine',
+					'safe_to_fix' => true,
+				];
+			}
 			if ( $rule === 'UA-014' ) {
 				return [
 					'icon'        => '⚙️',
