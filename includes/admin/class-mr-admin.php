@@ -14,6 +14,8 @@ class Malroot_Admin {
 		add_action( 'admin_post_malroot_rebuild_baseline',   [ __CLASS__, 'handle_rebuild_baseline' ] );
 		add_action( 'admin_post_malroot_spam_dryrun',        [ __CLASS__, 'handle_spam_dryrun' ] );
 		add_action( 'admin_post_malroot_spam_delete',        [ __CLASS__, 'handle_spam_delete' ] );
+		add_action( 'admin_post_malroot_comment_spam_dryrun', [ __CLASS__, 'handle_comment_spam_dryrun' ] );
+		add_action( 'admin_post_malroot_comment_spam_delete', [ __CLASS__, 'handle_comment_spam_delete' ] );
 		add_action( 'admin_post_malroot_accept_finding',     [ __CLASS__, 'handle_accept_finding' ] );
 		add_action( 'admin_post_malroot_ignore_finding',     [ __CLASS__, 'handle_ignore_finding' ] );
 		add_action( 'admin_post_malroot_export_findings',    [ __CLASS__, 'handle_export_findings' ] );
@@ -141,6 +143,9 @@ class Malroot_Admin {
 			'alert_email'              => sanitize_email( wp_unslash( $_POST['alert_email'] ?? '' ) ),
 			'slack_webhook'            => esc_url_raw( wp_unslash( $_POST['slack_webhook'] ?? '' ) ),
 			'login_threshold'          => max( 3, min( 20, (int) ( isset( $_POST['login_threshold'] ) ? sanitize_text_field( wp_unslash( $_POST['login_threshold'] ) ) : 5 ) ) ),
+			'alert_min_severity'       => in_array( ( $_POST['alert_min_severity'] ?? 'high' ), [ 'critical', 'high', 'medium' ], true ) ? sanitize_key( wp_unslash( $_POST['alert_min_severity'] ) ) : 'high',
+			'alert_login_activity'     => empty( $_POST['alert_login_activity'] ) ? 0 : 1,
+			'block_comment_spam'       => empty( $_POST['block_comment_spam'] ) ? 0 : 1,
 		];
 		update_option( 'malroot_settings', array_merge( $current, $new ) );
 
@@ -520,14 +525,31 @@ class Malroot_Admin {
 								✓ <?php esc_html_e( 'I made this change — accept it', 'malroot-security' ); ?>
 							</button>
 						</form>
-						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline">
-							<input type="hidden" name="action" value="malroot_quarantine" />
-							<input type="hidden" name="finding_id" value="<?php echo (int) $f->id; ?>" />
-							<?php wp_nonce_field( 'malroot_quarantine' ); ?>
-							<button type="submit" class="button" style="background:#fff;color:#a00">
-								🗑️ <?php esc_html_e( 'I did NOT make this change — remove it', 'malroot-security' ); ?>
-							</button>
-						</form>
+						<?php
+						$file_gone = ! file_exists( ABSPATH . ltrim( $f->target, '/' ) );
+						// Deleting a MODIFIED file that belongs to WordPress core, a
+						// plugin, or a theme would break the site — the file is
+						// needed, it just differs from our snapshot.
+						$is_managed_modification = ( 'INT-MOD' === $f->rule_id ) && Malroot_Baseline::component_key( $f->target );
+						?>
+						<?php if ( $file_gone ) : ?>
+							<span style="font-size:12px;color:#555;background:#f6f7f7;padding:6px 10px;border-radius:3px;border:1px solid #ddd">
+								<?php esc_html_e( 'This file was removed — usually by a plugin or theme update. There is nothing to delete. Click "Accept" if that was expected, or reinstall the plugin/theme if you want it back.', 'malroot-security' ); ?>
+							</span>
+						<?php elseif ( $is_managed_modification ) : ?>
+							<span style="font-size:12px;color:#8a6d00;background:#fff8e1;padding:6px 10px;border-radius:3px;border:1px solid #ffe082">
+								<?php esc_html_e( 'This is part of WordPress, a plugin, or a theme. Do not delete it — reinstall the official version from Dashboard → Updates or the Plugins/Themes screen to restore a clean copy.', 'malroot-security' ); ?>
+							</span>
+						<?php else : ?>
+							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline">
+								<input type="hidden" name="action" value="malroot_quarantine" />
+								<input type="hidden" name="finding_id" value="<?php echo (int) $f->id; ?>" />
+								<?php wp_nonce_field( 'malroot_quarantine' ); ?>
+								<button type="submit" class="button" style="background:#fff;color:#a00">
+									🗑️ <?php esc_html_e( 'I did NOT make this change — remove it', 'malroot-security' ); ?>
+								</button>
+							</form>
+						<?php endif; ?>
 						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline">
 							<input type="hidden" name="action" value="malroot_ignore_finding" />
 							<input type="hidden" name="finding_id" value="<?php echo (int) $f->id; ?>" />
@@ -848,6 +870,10 @@ class Malroot_Admin {
 							<td><label><input type="checkbox" name="realtime_scan_options" value="1" <?php checked( ! empty( $s['realtime_scan_options'] ) ); ?>> <?php esc_html_e( 'Block option saves containing eval/base64/known C2 strings.', 'malroot-security' ); ?></label></td></tr>
 						<tr><th><?php esc_html_e( 'Outbound connection monitor', 'malroot-security' ); ?></th>
 							<td><label><input type="checkbox" name="monitor_outbound" value="1" <?php checked( ! empty( $s['monitor_outbound'] ) ); ?>> <?php esc_html_e( 'Log every external HTTP request and alert on known C2 hosts.', 'malroot-security' ); ?></label></td></tr>
+						<tr><th><?php esc_html_e( 'Block spam comments', 'malroot-security' ); ?></th>
+							<td><label><input type="checkbox" name="block_comment_spam" value="1" <?php checked( Malroot_Spam_Shield::comment_blocking_enabled() ); ?>> <?php esc_html_e( 'Reject bot comment spam (fake "TikTok"/"BBC Post" comments) before it is stored.', 'malroot-security' ); ?></label>
+								<p class="description"><?php esc_html_e( 'Recommended. Blocking a comment before it saves also denies the malicious after_insert_comment trigger its input, which is what silently creates rogue admin accounts on these attacks.', 'malroot-security' ); ?></p>
+							</td></tr>
 						<tr><th><?php esc_html_e( 'IP geolocation (third-party)', 'malroot-security' ); ?></th>
 							<td><label><input type="checkbox" name="geoip_enabled" value="1" <?php checked( ! empty( $s['geoip_enabled'] ) ); ?>> <?php esc_html_e( 'Look up the country/city for login IP addresses on the Logins page.', 'malroot-security' ); ?></label>
 								<p class="description"><?php esc_html_e( 'Off by default. When enabled, the IP address being viewed is sent to ipapi.co (a third-party service) to resolve its location. Results are cached locally. Leave off to keep all IP data on your server. See the plugin\'s "External services" documentation for details.', 'malroot-security' ); ?></p>
@@ -900,6 +926,22 @@ class Malroot_Admin {
 				<div class="mr-settings-section">
 					<div class="mr-settings-section-header"><?php esc_html_e( 'Alerting', 'malroot-security' ); ?></div>
 					<table class="form-table">
+						<tr><th><?php esc_html_e( 'Email me about', 'malroot-security' ); ?></th>
+							<td>
+								<?php $min = $s['alert_min_severity'] ?? 'high'; ?>
+								<select name="alert_min_severity">
+									<option value="critical" <?php selected( $min, 'critical' ); ?>><?php esc_html_e( 'Only urgent issues (recommended for quiet inboxes)', 'malroot-security' ); ?></option>
+									<option value="high" <?php selected( $min, 'high' ); ?>><?php esc_html_e( 'Urgent and important issues (default)', 'malroot-security' ); ?></option>
+									<option value="medium" <?php selected( $min, 'medium' ); ?>><?php esc_html_e( 'Urgent, important and medium issues', 'malroot-security' ); ?></option>
+								</select>
+								<p class="description"><?php esc_html_e( 'Choose how noisy your alerts are. Lower-priority items are always visible on the dashboard even if they are not emailed.', 'malroot-security' ); ?></p>
+							</td></tr>
+						<tr><th><?php esc_html_e( 'Login activity emails', 'malroot-security' ); ?></th>
+							<td>
+								<label><input type="checkbox" name="alert_login_activity" <?php checked( ! empty( $s['alert_login_activity'] ) ); ?>>
+									<?php esc_html_e( 'Also email me about routine admin logins (new location) and IP lockouts', 'malroot-security' ); ?></label>
+								<p class="description"><?php esc_html_e( 'Off by default. These are informational, not signs of a hack, and can fill your inbox. Genuine threats (like an unknown admin appearing) are always emailed regardless of this setting.', 'malroot-security' ); ?></p>
+							</td></tr>
 						<tr><th><?php esc_html_e( 'Alert email', 'malroot-security' ); ?></th>
 							<td>
 								<input type="email" class="regular-text" name="alert_email" value="<?php echo esc_attr( $s['alert_email'] ?? '' ); ?>">
@@ -908,7 +950,7 @@ class Malroot_Admin {
 									<?php wp_nonce_field( 'malroot_test_email' ); ?>
 									<button type="submit" class="button button-secondary"><?php esc_html_e( 'Send test email', 'malroot-security' ); ?></button>
 								</form>
-								<p class="description"><?php esc_html_e( 'Critical and high alerts are sent immediately. Scan digests are sent when new findings appear.', 'malroot-security' ); ?></p>
+								<p class="description"><?php esc_html_e( 'Where alerts are sent. Emails are written in plain language so anyone on your team can act on them.', 'malroot-security' ); ?></p>
 							</td></tr>
 						<tr><th><?php esc_html_e( 'Slack webhook URL', 'malroot-security' ); ?></th>
 							<td><input type="url" class="regular-text" name="slack_webhook" value="<?php echo esc_attr( $s['slack_webhook'] ?? '' ); ?>" placeholder="https://hooks.slack.com/services/..."></td></tr>
@@ -1258,6 +1300,26 @@ class Malroot_Admin {
 		exit;
 	}
 
+	public static function handle_comment_spam_dryrun() {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
+		check_admin_referer( 'malroot_comment_spam_dryrun' );
+		$result = Malroot_Spam_Shield::cleanup_comments( true );
+		set_transient( 'malroot_comment_spam_dryrun', $result, HOUR_IN_SECONDS );
+		wp_safe_redirect( admin_url( 'admin.php?page=malroot-spam&mr_comment_dryrun=1' ) );
+		exit;
+	}
+
+	public static function handle_comment_spam_delete() {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden.', 403 );
+		check_admin_referer( 'malroot_comment_spam_delete' );
+		// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
+		@set_time_limit( 300 );
+		$result = Malroot_Spam_Shield::cleanup_comments( false );
+		delete_transient( 'malroot_comment_spam_dryrun' );
+		wp_safe_redirect( add_query_arg( [ 'mr_comment_deleted' => (int) $result['count'] ], admin_url( 'admin.php?page=malroot-spam' ) ) );
+		exit;
+	}
+
 	/* ---------------------------------------------------------------- */
 	/*  v0.3 pages                                                      */
 	/* ---------------------------------------------------------------- */
@@ -1358,6 +1420,71 @@ class Malroot_Admin {
 				</div>
 			<?php elseif ( $dryrun ) : ?>
 				<p style="margin-top:20px"><strong><?php esc_html_e( 'No spam users found.', 'malroot-security' ); ?></strong></p>
+			<?php endif; ?>
+
+			<hr style="margin:30px 0">
+
+			<h2><?php esc_html_e( 'Spam comments', 'malroot-security' ); ?></h2>
+			<p><?php esc_html_e( 'Find and remove comment spam (fake "TikTok", "BBC Post" and similar bot comments). Matches are moved to Trash so you can restore them if needed.', 'malroot-security' ); ?></p>
+			<p>
+				<?php if ( Malroot_Spam_Shield::comment_blocking_enabled() ) : ?>
+					<span style="color:#008a20">&#10004; <?php esc_html_e( 'New spam comments are being blocked automatically.', 'malroot-security' ); ?></span>
+				<?php else : ?>
+					<span style="color:#b32d2e"><?php esc_html_e( 'Automatic blocking of new spam comments is OFF. Turn it on under Malroot → Settings → Real-time Protection.', 'malroot-security' ); ?></span>
+				<?php endif; ?>
+			</p>
+
+			<?php $comment_dry = get_transient( 'malroot_comment_spam_dryrun' ); ?>
+			<?php if ( isset( $_GET['mr_comment_deleted'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+				<div class="notice notice-success is-dismissible"><p>
+					<?php
+					/* translators: %d: number of spam comments moved to trash */
+					printf( esc_html__( 'Moved %d spam comments to Trash.', 'malroot-security' ), (int) $_GET['mr_comment_deleted'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+					?>
+				</p></div>
+			<?php endif; ?>
+
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline">
+				<input type="hidden" name="action" value="malroot_comment_spam_dryrun" />
+				<?php wp_nonce_field( 'malroot_comment_spam_dryrun' ); ?>
+				<button type="submit" class="button button-primary"><?php esc_html_e( 'Find spam comments', 'malroot-security' ); ?></button>
+			</form>
+
+			<?php if ( $comment_dry && ! empty( $comment_dry['sample'] ) ) : ?>
+				<div style="margin-top:20px;border:1px solid #ccd0d4;background:#fff;padding:20px">
+					<p><strong><?php
+					/* translators: %d: number of spam comments that would be removed */
+					printf( esc_html__( 'Found %d spam comments.', 'malroot-security' ), (int) $comment_dry['count'] ); ?></strong></p>
+					<table class="widefat striped">
+						<thead><tr><th><?php esc_html_e( 'Author', 'malroot-security' ); ?></th><th><?php esc_html_e( 'Comment', 'malroot-security' ); ?></th></tr></thead>
+						<tbody>
+						<?php foreach ( $comment_dry['sample'] as $c ) : ?>
+							<tr>
+								<td><code><?php echo esc_html( $c->comment_author ); ?></code><br><small><?php echo esc_html( $c->comment_author_url ); ?></small></td>
+								<td><?php echo esc_html( wp_trim_words( $c->comment_content, 20 ) ); ?></td>
+							</tr>
+						<?php endforeach; ?>
+						</tbody>
+					</table>
+					<p style="margin-top:15px"><em><?php esc_html_e( 'Showing first 25 matches.', 'malroot-security' ); ?></em></p>
+
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:15px">
+						<input type="hidden" name="action" value="malroot_comment_spam_delete" />
+						<?php wp_nonce_field( 'malroot_comment_spam_delete' ); ?>
+						<?php
+						/* translators: %d: number of spam comments to remove */
+						$mr_comment_confirm = sprintf( __( 'Move %d comments to Trash?', 'malroot-security' ), (int) $comment_dry['count'] );
+						?>
+						<button type="submit" class="button button-link-delete" onclick="return confirm('<?php echo esc_js( $mr_comment_confirm ); ?>')">
+							<?php
+							/* translators: %d: number of spam comments to remove */
+							printf( esc_html__( 'Move %d comments to Trash', 'malroot-security' ), (int) $comment_dry['count'] );
+							?>
+						</button>
+					</form>
+				</div>
+			<?php elseif ( $comment_dry ) : ?>
+				<p style="margin-top:20px"><strong><?php esc_html_e( 'No spam comments found.', 'malroot-security' ); ?></strong></p>
 			<?php endif; ?>
 		</div>
 		<?php
@@ -1488,8 +1615,8 @@ class Malroot_Admin {
 					<input type="hidden" name="action" value="malroot_run_incident" />
 					<input type="hidden" name="token" value="<?php echo esc_attr( Malroot_Incident_Response::token() ); ?>" />
 					<?php wp_nonce_field( 'malroot_run_incident' ); ?>
-					<button type="submit" class="button button-primary button-hero mr-btn-danger" onclick="return confirm('<?php esc_attr_e( 'Run the full cleanup now? Everyone will be signed out, and every change can be undone from the Quarantine page.', 'malroot-security' ); ?>')">
-						<span class="dashicons dashicons-shield" style="margin:3px 6px 0 0"></span>
+					<button type="submit" class="button button-primary button-hero mr-btn-danger" style="display:inline-flex;align-items:center;gap:8px" onclick="return confirm('<?php esc_attr_e( 'Run the full cleanup now? Everyone will be signed out, and every change can be undone from the Quarantine page.', 'malroot-security' ); ?>')">
+						<span class="dashicons dashicons-shield" style="width:20px;height:20px;font-size:20px;line-height:1;margin:0"></span>
 						<?php esc_html_e( 'Run cleanup now', 'malroot-security' ); ?>
 					</button>
 					<span class="mr-ir-run-note"><?php esc_html_e( 'Takes a few seconds. You’ll see a summary right here when it’s done.', 'malroot-security' ); ?></span>

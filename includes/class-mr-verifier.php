@@ -26,56 +26,97 @@ class Malroot_Verifier {
 	public static function verify( $rel_path ) {
 		$abs = ABSPATH . ltrim( $rel_path, '/' );
 		if ( ! file_exists( $abs ) ) {
-			return self::result( self::VERDICT_UNKNOWN, __( 'File no longer exists.', 'malroot-security' ) );
-		}
-
-		// 1) Highest priority: malware signature check.
-		// If the file content matches a known malware pattern, nothing else matters.
-		$mal = self::scan_for_malware( $abs );
-		if ( $mal ) {
-			return self::result( self::VERDICT_MALICIOUS,
-    /* translators: %s is replaced with dynamic content */
-				sprintf( __( 'File contains malware pattern: %s', 'malroot-security' ), $mal ),
-				$mal
+			// The file is gone. If the current official plugin version no longer
+			// ships it, the removal is expected (an update dropped it).
+			if ( self::is_expected_plugin_deletion( $rel_path ) ) {
+				return self::result( self::VERDICT_PROBABLY,
+					__( 'This file was removed and the current official plugin version no longer includes it — this is an expected update change.', 'malroot-security' )
+				);
+			}
+			// Otherwise a file that should exist is missing — likely an
+			// incomplete/interrupted update. Reinstalling restores it.
+			return self::result( self::VERDICT_UNKNOWN,
+				__( 'A file that this plugin/theme normally ships is missing. This usually means an update did not finish. Reinstall the plugin/theme to restore it — there is nothing to delete.', 'malroot-security' )
 			);
 		}
 
-		// 2) WordPress core checksum check.
+		$content = self::read_code( $abs );
+
+		// 0) Unambiguous backdoor signatures. These strings never appear in
+		// legitimate code, so they override everything — even a checksum.
+		if ( $content !== null ) {
+			$strong = self::strong_backdoor_signal( $content );
+			if ( $strong ) {
+				return self::result( self::VERDICT_MALICIOUS,
+					/* translators: %s: name of the malware pattern */
+					sprintf( __( 'File contains a known backdoor pattern: %s', 'malroot-security' ), $strong ),
+					$strong
+				);
+			}
+		}
+
+		// 1) WordPress core checksum — authoritative. A match is definitively
+		// safe; a mismatch on a core file is definitively bad.
 		if ( preg_match( '#^wp-(admin|includes)/#', $rel_path ) || in_array( $rel_path, self::core_root_files(), true ) ) {
 			$core = self::verify_against_wp_core( $rel_path, $abs );
 			if ( $core ) return $core;
 		}
 
-		// 3) Plugin checksum check.
+		// 2) Plugin checksum — authoritative for plugins hosted on WordPress.org.
 		if ( preg_match( '#^wp-content/plugins/([^/]+)/#', $rel_path, $m ) ) {
 			$plugin = self::verify_against_plugin_checksum( $m[1], $rel_path, $abs );
 			if ( $plugin ) return $plugin;
-
-			// 4) Fallback: was this plugin updated recently?
-			$recent = self::was_plugin_updated_recently( $m[1] );
-			if ( $recent ) {
-				return self::result( self::VERDICT_PROBABLY,
-     /* translators: %s is replaced with dynamic content */
-					sprintf( __( 'Plugin "%s" was updated recently — change is likely from that update.', 'malroot-security' ), $m[1] )
-				);
-			}
 		}
 
-		// 5) Theme: check if the active theme was updated recently.
-		if ( preg_match( '#^wp-content/themes/([^/]+)/#', $rel_path, $m ) ) {
-			$recent = self::was_theme_updated_recently( $m[1] );
-			if ( $recent ) {
-				return self::result( self::VERDICT_PROBABLY,
-     /* translators: %s is replaced with dynamic content */
-					sprintf( __( 'Theme "%s" was updated recently — change is likely from that update.', 'malroot-security' ), $m[1] )
-				);
-			}
-		}
-
-		// 6) PHP file in /uploads/ is always suspicious regardless
+		// 3) A PHP file inside /uploads/ is never legitimate.
 		if ( strpos( $rel_path, 'wp-content/uploads/' ) !== false && preg_match( '/\.(php|phtml|phar)$/i', $rel_path ) ) {
 			return self::result( self::VERDICT_MALICIOUS,
 				__( 'PHP files should never exist in the uploads folder.', 'malroot-security' )
+			);
+		}
+
+		// 4) Explained by a legitimate version update (or a recent update window)?
+		if ( class_exists( 'Malroot_Baseline' ) && Malroot_Baseline::is_expected_update_change( $rel_path ) ) {
+			return self::result( self::VERDICT_PROBABLY,
+				__( 'The plugin/theme this file belongs to was updated — the change matches that update.', 'malroot-security' )
+			);
+		}
+		if ( preg_match( '#^wp-content/plugins/([^/]+)/#', $rel_path, $m ) && self::was_plugin_updated_recently( $m[1] ) ) {
+			return self::result( self::VERDICT_PROBABLY,
+				/* translators: %s: plugin slug */
+				sprintf( __( 'Plugin "%s" was updated recently — change is likely from that update.', 'malroot-security' ), $m[1] )
+			);
+		}
+		if ( preg_match( '#^wp-content/themes/([^/]+)/#', $rel_path, $m ) && self::was_theme_updated_recently( $m[1] ) ) {
+			return self::result( self::VERDICT_PROBABLY,
+				/* translators: %s: theme slug */
+				sprintf( __( 'Theme "%s" was updated recently — change is likely from that update.', 'malroot-security' ), $m[1] )
+			);
+		}
+
+		// 5) Deep content analysis for anything still unverified. This reads the
+		// actual code and scores it, so we can tell "looks like normal code" from
+		// "contains obfuscated/backdoor-like code" instead of guessing.
+		if ( $content !== null ) {
+			$assess = self::assess_content( $content );
+			if ( $assess['score'] >= 5 ) {
+				return self::result( self::VERDICT_MALICIOUS,
+					__( 'Code analysis found strong signs of malicious code: ', 'malroot-security' ) . implode( '; ', $assess['signals'] ),
+					implode( ',', $assess['signals'] ),
+					$assess
+				);
+			}
+			if ( empty( $assess['signals'] ) ) {
+				return self::result( self::VERDICT_PROBABLY,
+					__( 'Code analysis found no suspicious patterns — this looks like normal code (for example a plugin/theme file you or an update changed).', 'malroot-security' ),
+					'',
+					$assess
+				);
+			}
+			return self::result( self::VERDICT_UNKNOWN,
+				__( 'Could not verify from an official source. Code analysis noted: ', 'malroot-security' ) . implode( '; ', $assess['signals'] ) . __( '. Manual review recommended.', 'malroot-security' ),
+				'',
+				$assess
 			);
 		}
 
@@ -84,28 +125,38 @@ class Malroot_Verifier {
 		);
 	}
 
-	/* ---------------------------------------------------------------- */
-	/*  Layer 1: Malware signatures                                     */
-	/* ---------------------------------------------------------------- */
-
-	private static function scan_for_malware( $abs ) {
-		if ( filesize( $abs ) > 5 * 1024 * 1024 ) return null;
+	/** Read a code-like file for analysis, or null if it isn't one / is too big. */
+	private static function read_code( $abs ) {
+		if ( ! is_file( $abs ) || filesize( $abs ) > 5 * 1024 * 1024 ) {
+			return null;
+		}
 		if ( ! preg_match( '/\.(php|phtml|phar|js|htaccess)$/i', $abs ) && basename( $abs ) !== '.htaccess' ) {
 			return null;
 		}
 		$content = @file_get_contents( $abs );
-		if ( ! $content ) return null;
+		return $content === false ? null : $content;
+	}
 
+	/* ---------------------------------------------------------------- */
+	/*  Layer 1: Malware signatures                                     */
+	/* ---------------------------------------------------------------- */
+
+	/**
+	 * Patterns that are effectively never present in legitimate code. A single
+	 * match is enough to call a file malicious, ahead of any checksum. Kept
+	 * deliberately tight to avoid false positives on real plugin/theme code.
+	 */
+	private static function strong_backdoor_signal( $content ) {
 		$signatures = [
-			'WSO/FilesMan webshell'         => '/(FilesMan|get_footer_sq)/',
-			'gzinflate(base64_decode) eval' => '/eval\s*\(\s*gzinflate\s*\(\s*base64_decode/',
-			'?stream= dropper'              => '/\$_GET\s*\[\s*[\'\"]stream[\'\"]\s*\].*?curl_exec/s',
-			'unauthenticated upload form'   => '/is_uploaded_file\s*\([^)]*\$_FILES.*move_uploaded_file/s',
-			'system-control C2'             => '/(SC_PANEL_URL|superfuckingpanel|SC_REST_NAMESPACE)/',
-			'eval(base64_decode($_)'        => '/eval\s*\(\s*(base64_decode|gzinflate|str_rot13)\s*\(\s*@?\$_(GET|POST|REQUEST|COOKIE)/',
-			'preg_replace /e modifier'      => '/preg_replace\s*\(\s*[\'\"][^\'\"]*\/e[^\'\"]*[\'\"]/',
-			'create_function backdoor'      => '/create_function\s*\(\s*[\'\"]?\s*[\'\"]?\s*,\s*\$_/',
-			'String.fromCharCode redirect'  => '/<script[^>]*>[^<]*String\.fromCharCode\s*\(\s*60/',
+			'WSO/FilesMan webshell'          => '/(FilesMan|get_footer_sq|c99shell|r57shell|b374k)/',
+			'eval(gzinflate(base64_decode))' => '/eval\s*\(\s*gzinflate\s*\(\s*base64_decode/',
+			'eval() of request input'        => '/(eval|assert)\s*\(\s*(base64_decode|gzinflate|str_rot13|gzuncompress)?\s*\(?\s*@?\$_(GET|POST|REQUEST|COOKIE|SERVER)/',
+			'request-driven code execution'  => '/\b(system|exec|shell_exec|passthru|popen|proc_open)\s*\(\s*@?\$_(GET|POST|REQUEST|COOKIE)/',
+			'?stream= dropper'               => '/\$_GET\s*\[\s*[\'\"]stream[\'\"]\s*\].*?curl_exec/s',
+			'system-control C2'              => '/(SC_PANEL_URL|superfuckingpanel|SC_REST_NAMESPACE)/',
+			'create_function backdoor'       => '/create_function\s*\(\s*[\'\"]?\s*[\'\"]?\s*,\s*\$_/',
+			'variable-function on request'   => '/\$_(GET|POST|REQUEST|COOKIE)\s*\[[^\]]+\]\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)/',
+			'String.fromCharCode redirect'   => '/<script[^>]*>[^<]*String\.fromCharCode\s*\(\s*60/',
 		];
 		foreach ( $signatures as $name => $regex ) {
 			if ( preg_match( $regex, $content ) ) {
@@ -113,6 +164,63 @@ class Malroot_Verifier {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Scored content analysis. Reads the code and tallies suspicious traits.
+	 * Weaker than strong_backdoor_signal (these traits CAN appear in legitimate
+	 * code), so it runs only after authoritative checks fail, and a high total
+	 * — not any single hit — is what marks a file malicious.
+	 *
+	 * @return array { score:int, signals:string[] }
+	 */
+	public static function assess_content( $content ) {
+		$score   = 0;
+		$signals = [];
+		$add = static function ( $points, $label ) use ( &$score, &$signals ) {
+			$score += $points;
+			$signals[] = $label;
+		};
+
+		// Real /e modifier: a delimited pattern whose modifier list contains 'e'
+		// e.g. preg_replace('/foo/e', ...) or "#bar#ei". The delimiter after the
+		// opening quote must reappear before the modifiers, so ordinary strings
+		// like 'edit' or "example" can never match.
+		if ( preg_match( '/\bpreg_replace\s*\(\s*([\'"])([#\/~!@%|])(?:(?!\2).)*\2[a-zA-Z]*e[a-zA-Z]*\1/s', $content ) ) {
+			$add( 4, __( 'preg_replace with /e (runs code)', 'malroot-security' ) );
+		}
+		if ( preg_match( '/\b(eval|assert)\s*\(/', $content ) ) {
+			$add( 3, __( 'uses eval()/assert()', 'malroot-security' ) );
+		}
+		if ( preg_match( '/\bgzinflate\s*\(|\bgzuncompress\s*\(|\bstr_rot13\s*\(/', $content ) ) {
+			$add( 2, __( 'decompresses/obfuscates code at runtime', 'malroot-security' ) );
+		}
+		// Long base64 blob (common malware payload carrier).
+		if ( preg_match( '/[\'"][A-Za-z0-9+\/]{300,}={0,2}[\'"]/', $content ) ) {
+			$add( 3, __( 'contains a large encoded blob', 'malroot-security' ) );
+		}
+		if ( preg_match_all( '/base64_decode\s*\(/', $content ) >= 2 ) {
+			$add( 2, __( 'repeated base64 decoding', 'malroot-security' ) );
+		}
+		// Long chr()/concatenation chains used to hide strings.
+		if ( preg_match_all( '/chr\s*\(\s*\d+\s*\)/', $content ) >= 8 ) {
+			$add( 2, __( 'builds hidden strings with chr()', 'malroot-security' ) );
+		}
+		if ( preg_match( '/\bmove_uploaded_file\s*\(/', $content ) && preg_match( '/\$_FILES/', $content ) && ! preg_match( '/wp_handle_upload|check_admin_referer|wp_verify_nonce|current_user_can/', $content ) ) {
+			$add( 3, __( 'accepts file uploads without WordPress permission checks', 'malroot-security' ) );
+		}
+		if ( preg_match( '/\bfile_put_contents\s*\([^)]*\.(php|phtml)/i', $content ) ) {
+			$add( 2, __( 'writes PHP files at runtime', 'malroot-security' ) );
+		}
+		if ( preg_match( '/\b(edoced_46esab|etalfnizg|noitcnuf_etaerc)\b/', $content ) ) {
+			$add( 3, __( 'reversed function names (obfuscation)', 'malroot-security' ) );
+		}
+		// Excessive goto labels — a classic obfuscator signature.
+		if ( preg_match_all( '/goto\s+\w+;/', $content ) >= 5 ) {
+			$add( 2, __( 'heavy goto-based obfuscation', 'malroot-security' ) );
+		}
+
+		return [ 'score' => $score, 'signals' => $signals ];
 	}
 
 	/* ---------------------------------------------------------------- */
@@ -170,11 +278,10 @@ class Malroot_Verifier {
 	/*  Layer 3: Plugin checksum                                        */
 	/* ---------------------------------------------------------------- */
 
-	private static function verify_against_plugin_checksum( $slug, $rel_path, $abs ) {
-		// Get the plugin's installed version from the local plugin headers
+	/** Resolve a plugin slug's installed version from its header, or '' if unknown. */
+	private static function installed_plugin_version( $slug ) {
 		$plugin_file = WP_PLUGIN_DIR . '/' . $slug . '/' . $slug . '.php';
 		if ( ! file_exists( $plugin_file ) ) {
-			// Try to locate any PHP file with a Plugin Name header
 			$candidates = glob( WP_PLUGIN_DIR . '/' . $slug . '/*.php' ) ?: [];
 			foreach ( $candidates as $c ) {
 				$head = file_get_contents( $c, false, null, 0, 8192 );
@@ -184,14 +291,47 @@ class Malroot_Verifier {
 				}
 			}
 		}
-		if ( ! file_exists( $plugin_file ) ) return null;
+		if ( ! file_exists( $plugin_file ) ) return '';
 
 		if ( ! function_exists( 'get_plugin_data' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 		$data = get_plugin_data( $plugin_file, false, false );
-		$version = $data['Version'] ?? '';
-		if ( ! $version ) return null;
+		return (string) ( $data['Version'] ?? '' );
+	}
+
+	/**
+	 * Is a "deleted" file legitimately absent because the current official plugin
+	 * version no longer ships it? Authoritative for WordPress.org plugins and
+	 * needs no local baseline history — we ask WordPress.org what the current
+	 * version is supposed to contain.
+	 *
+	 * Returns:
+	 *   true  → the file is not part of the current official version (update removed it)
+	 *   false → we can't confirm (not a .org plugin, no manifest), OR the file
+	 *           SHOULD exist in this version but is missing (worth flagging)
+	 */
+	public static function is_expected_plugin_deletion( $rel_path ) {
+		if ( ! preg_match( '#^wp-content/plugins/([^/]+)/(.+)$#', $rel_path, $m ) ) {
+			return false;
+		}
+		$slug           = $m[1];
+		$path_in_plugin = $m[2];
+
+		$version = self::installed_plugin_version( $slug );
+		if ( '' === $version ) return false;
+
+		$checksums = self::get_plugin_checksums( $slug, $version );
+		if ( empty( $checksums ) ) return false; // no official manifest to compare against
+
+		// If the current version's manifest doesn't list this file, it was
+		// legitimately dropped by the update.
+		return ! array_key_exists( $path_in_plugin, $checksums );
+	}
+
+	private static function verify_against_plugin_checksum( $slug, $rel_path, $abs ) {
+		$version = self::installed_plugin_version( $slug );
+		if ( '' === $version ) return null;
 
 		$checksums = self::get_plugin_checksums( $slug, $version );
 		if ( ! $checksums ) return null;
@@ -268,11 +408,12 @@ class Malroot_Verifier {
 		];
 	}
 
-	private static function result( $verdict, $reason, $evidence = '' ) {
+	private static function result( $verdict, $reason, $evidence = '', $assessment = null ) {
 		return [
-			'verdict'  => $verdict,
-			'reason'   => $reason,
-			'evidence' => $evidence,
+			'verdict'    => $verdict,
+			'reason'     => $reason,
+			'evidence'   => $evidence,
+			'assessment' => $assessment,
 		];
 	}
 }

@@ -36,11 +36,153 @@ class Malroot_Spam_Shield {
 		'leruli.topless.mom',
 	];
 
+	/** Content phrases that mark a comment as spam. */
+	private static $comment_spam_phrases = [
+		'/struggling to get comments/i',
+		'/get (more )?comments on your (blog|site|website)/i',
+		'/\b(viagra|cialis|casino|porn|escort|payday loan)\b/i',
+		'/\b(crypto|bitcoin|forex)\b.{0,40}\b(profit|signal|pump|invest)\b/i',
+		'/\b(seo|backlinks?)\b.{0,30}\b(cheap|buy|service)\b/i',
+	];
+
+	/**
+	 * Bot comment "author" names that impersonate well-known brands. Real people
+	 * do not sign comments as "TikTok" or "BBC Post" — this is the current wave
+	 * of comment spam that also feeds the malicious after_insert_comment trigger.
+	 */
+	private static $comment_spam_authors = [
+		'tiktok', 'wp notify', 'wp mail', 'wordpress notify', 'bbc post',
+		'twitter posts', 'twitter post', 'google news', 'facebook', 'instagram',
+		'linkedin', 'youtube', 'telegram', 'news post', 'daily news',
+	];
+
 	public static function register() {
 		add_action( 'register_form',                 [ __CLASS__, 'render_honeypot' ] );
 		add_filter( 'registration_errors',           [ __CLASS__, 'check_registration' ], 10, 3 );
 		add_filter( 'pre_user_login',                [ __CLASS__, 'reject_bad_logins' ] );
 		add_filter( 'wp_pre_insert_user_data',       [ __CLASS__, 'reject_bad_email_domain' ], 10, 4 );
+
+		// Comment spam prevention (opt-out via settings). Blocking BEFORE the
+		// comment row is inserted also denies the malicious after_insert_comment
+		// trigger its input, so it kills the spam AND the admin-injection vector.
+		if ( self::comment_blocking_enabled() ) {
+			add_filter( 'preprocess_comment', [ __CLASS__, 'block_spam_comment' ], 1 );
+		}
+	}
+
+	/** Whether to actively block spam comments on submission. On by default. */
+	public static function comment_blocking_enabled() {
+		$s = (array) get_option( 'malroot_settings', [] );
+		return ! isset( $s['block_comment_spam'] ) || ! empty( $s['block_comment_spam'] );
+	}
+
+	/**
+	 * Reject a spam comment before it is stored. Returning is fine for legit
+	 * comments; obvious spam is stopped with a 403 so bots move on.
+	 */
+	public static function block_spam_comment( $commentdata ) {
+		// Never interfere with logged-in users' comments.
+		if ( is_user_logged_in() ) {
+			return $commentdata;
+		}
+		if ( self::comment_is_spam( $commentdata ) ) {
+			wp_die(
+				esc_html__( 'Your comment looks like spam and was not posted.', 'malroot-security' ),
+				esc_html__( 'Comment blocked', 'malroot-security' ),
+				[ 'response' => 403 ]
+			);
+		}
+		return $commentdata;
+	}
+
+	/**
+	 * Heuristic spam test for a comment array (as passed to preprocess_comment
+	 * or reconstructed from a stored comment).
+	 */
+	public static function comment_is_spam( $c ) {
+		$author  = strtolower( trim( (string) ( $c['comment_author'] ?? '' ) ) );
+		$url     = (string) ( $c['comment_author_url'] ?? '' );
+		$email   = (string) ( $c['comment_author_email'] ?? '' );
+		$content = (string) ( $c['comment_content'] ?? '' );
+
+		// Brand-impersonation author name.
+		if ( $author !== '' && in_array( $author, self::$comment_spam_authors, true ) ) {
+			return true;
+		}
+
+		// Known spam phrases in the body.
+		foreach ( self::$comment_spam_phrases as $rx ) {
+			if ( preg_match( $rx, $content ) ) {
+				return true;
+			}
+		}
+
+		// Three or more links in a comment is almost always spam.
+		if ( preg_match_all( '#https?://#i', $content ) >= 3 ) {
+			return true;
+		}
+
+		// Blocked email/author-URL domain.
+		$domains = [];
+		if ( $email && strpos( $email, '@' ) !== false ) {
+			$domains[] = strtolower( substr( strrchr( $email, '@' ), 1 ) );
+		}
+		if ( $url ) {
+			$host = wp_parse_url( $url, PHP_URL_HOST );
+			if ( $host ) {
+				$domains[] = strtolower( $host );
+			}
+		}
+		foreach ( $domains as $d ) {
+			if ( self::is_blocked_domain( $d ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Find (and optionally remove) existing spam comments. Matches are moved to
+	 * Trash so they can be restored, never hard-deleted.
+	 *
+	 * @param bool $dry_run  When true, only report what would be removed.
+	 * @return array { count:int, sample:array, deleted:bool }
+	 */
+	public static function cleanup_comments( $dry_run = true ) {
+		// Fetch approved + pending comments. We intentionally do NOT pass
+		// 'type' => 'comment', because that can exclude ordinary comments stored
+		// with an empty comment_type; we skip pingbacks/trackbacks in the loop.
+		$comments = get_comments( [
+			'status' => 'all',
+			'number' => 5000,
+		] );
+
+		$matches = [];
+		foreach ( $comments as $c ) {
+			// Skip pingbacks/trackbacks — only inspect real comments.
+			if ( ! in_array( (string) $c->comment_type, [ '', 'comment' ], true ) ) {
+				continue;
+			}
+			$data = [
+				'comment_author'       => $c->comment_author,
+				'comment_author_email' => $c->comment_author_email,
+				'comment_author_url'   => $c->comment_author_url,
+				'comment_content'      => $c->comment_content,
+			];
+			if ( self::comment_is_spam( $data ) ) {
+				$matches[] = $c;
+			}
+		}
+
+		if ( $dry_run ) {
+			return [ 'count' => count( $matches ), 'sample' => array_slice( $matches, 0, 25 ) ];
+		}
+
+		foreach ( $matches as $c ) {
+			wp_trash_comment( $c->comment_ID );
+		}
+		return [ 'count' => count( $matches ), 'deleted' => true ];
 	}
 
 	public static function render_honeypot() {

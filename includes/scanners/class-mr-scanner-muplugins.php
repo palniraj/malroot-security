@@ -23,14 +23,40 @@ class Malroot_Scanner_MuPlugins extends Malroot_Scanner_Base {
 			'00-afn-security.php',
 		] );
 
+		// Well-known must-use plugins dropped in by reputable hosts and plugins.
+		// These are legitimate infrastructure, not self-healing malware, so we
+		// don't flag them. (mu-plugins that WRITE files at runtime are still
+		// caught by the SH-007 checks below, even if named like these.)
+		$known_good = [
+			'hostinger-php-error-reporting.php',
+			'hostinger-preview-domain.php',
+			'hostinger-auto-updates.php',
+			'hostinger-easy-onboarding.php',
+			'hostinger-login-notification.php',
+			'wp-staging-optimizer.php',
+			'automation-by-installatron.php',
+			'endurance-page-cache.php',
+			'kinsta-mu-plugins.php',
+			'wpcomsh-loader.php',
+			'wpe-cache-plugin.php',
+			'wpengine-common',
+			'cloudways-plugin.php',
+		];
+		$known_good_prefixes = [ 'hostinger-', 'wpe-', 'wpengine' ];
+
 		$it = new DirectoryIterator( $dir );
 		foreach ( $it as $f ) {
 			if ( $f->isDot() ) {
 				continue;
 			}
 			$name = $f->getFilename();
-			if ( in_array( $name, $allowlist, true ) ) {
+			if ( in_array( $name, $allowlist, true ) || in_array( $name, $known_good, true ) ) {
 				continue;
+			}
+			foreach ( $known_good_prefixes as $prefix ) {
+				if ( 0 === strpos( $name, $prefix ) ) {
+					continue 2;
+				}
 			}
 			$path = $f->getPathname();
 			$is_php = $f->isFile() && preg_match( '/\.php$/i', $name );

@@ -14,6 +14,54 @@ class Malroot_Alerting {
 		return $wpdb->prefix . 'malroot_alerts';
 	}
 
+	/* ---------------------------------------------------------------- */
+	/*  Alert preferences (Settings → Alerting)                         */
+	/* ---------------------------------------------------------------- */
+
+	/** Numeric rank so severities can be compared. Higher = more serious. */
+	private static function severity_rank( $severity ) {
+		$map = [ 'info' => 0, 'low' => 1, 'medium' => 2, 'high' => 3, 'critical' => 4 ];
+		return $map[ strtolower( (string) $severity ) ] ?? 0;
+	}
+
+	/**
+	 * Lowest severity the operator wants emailed/sent.
+	 * 'critical' | 'high' (default) | 'medium'
+	 */
+	private static function min_dispatch_severity() {
+		$s   = (array) get_option( 'malroot_settings', [] );
+		$val = isset( $s['alert_min_severity'] ) ? (string) $s['alert_min_severity'] : 'high';
+		return in_array( $val, [ 'critical', 'high', 'medium' ], true ) ? $val : 'high';
+	}
+
+	/**
+	 * Whether a given event type is allowed to notify at all. Lets the operator
+	 * silence noisy, low-value events (e.g. routine admin logins) without
+	 * turning off genuine security alerts.
+	 */
+	private static function event_notifications_enabled( $event_type ) {
+		$s = (array) get_option( 'malroot_settings', [] );
+
+		// Routine login-activity events: off by default. These are informational,
+		// not signs of compromise, and were the main source of alert fatigue.
+		$login_events = [ 'admin_login_new_origin', 'login_lockout' ];
+		if ( in_array( $event_type, $login_events, true ) ) {
+			return ! empty( $s['alert_login_activity'] );
+		}
+		return true;
+	}
+
+	/**
+	 * Should this alert be dispatched (emailed/Slacked)? Combines the severity
+	 * floor with the per-event toggle. Recording to the Alerts log is unaffected.
+	 */
+	private static function should_dispatch( $severity, $event_type ) {
+		if ( ! self::event_notifications_enabled( $event_type ) ) {
+			return false;
+		}
+		return self::severity_rank( $severity ) >= self::severity_rank( self::min_dispatch_severity() );
+	}
+
 	/**
 	 * Record + dispatch a single alert.
 	 */
@@ -46,8 +94,9 @@ class Malroot_Alerting {
 		);
 		Malroot_Logger::warning( 'Alert: ' . $summary, $context );
 
-		// Critical and HIGH alerts dispatch immediately, but only if not a duplicate
-		if ( in_array( $severity, [ 'critical', 'high' ], true ) && (int) $recent === 0 ) {
+		// Dispatch only if the alert clears the operator's severity floor, the
+		// event type is enabled, and it isn't a duplicate of a recent alert.
+		if ( self::should_dispatch( $severity, $event_type ) && (int) $recent === 0 ) {
 			self::dispatch( $severity, $event_type, $summary, $context );
 		}
 	}
@@ -57,7 +106,14 @@ class Malroot_Alerting {
 	 */
 	public static function alert_after_scan( $scan_id ) {
 		$counts = Malroot_Findings::counts_by_severity( $scan_id );
-		$bad    = $counts['critical'] + $counts['high'];
+
+		// Respect the operator's severity floor for the scan digest too. If they
+		// only want critical alerts, a high-only scan should stay quiet.
+		if ( self::min_dispatch_severity() === 'critical' ) {
+			$bad = $counts['critical'];
+		} else {
+			$bad = $counts['critical'] + $counts['high'];
+		}
 		if ( $bad === 0 ) {
 			return;
 		}
@@ -82,12 +138,11 @@ class Malroot_Alerting {
 
 		$score   = Malroot_Findings::security_score( $scan_id );
 		$summary = sprintf(
-   /* translators: %s is replaced with dynamic content */
-			__( 'Scan complete on %1$s — %2$d critical, %3$d high. Score %4$d/100.', 'malroot-security' ),
+			/* translators: 1: site name, 2: number of urgent issues, 3: number of important issues */
+			__( 'A security check just finished on %1$s. It found %2$d urgent and %3$d important issue(s) that need a look.', 'malroot-security' ),
 			wp_parse_url( home_url(), PHP_URL_HOST ),
 			$counts['critical'],
-			$counts['high'],
-			$score
+			$counts['high']
 		);
 
 		$top = array_slice(
@@ -101,7 +156,11 @@ class Malroot_Alerting {
 			$counts['critical'] > 0 ? 'critical' : 'high',
 			'scan_complete',
 			$summary,
-			[ 'top_findings' => $top, 'dashboard' => admin_url( 'admin.php?page=malroot-security' ) ]
+			[
+				'top_findings' => $top,
+				'score'        => $score,
+				'dashboard'    => admin_url( 'admin.php?page=malroot-security' ),
+			]
 		);
 	}
 
@@ -112,21 +171,32 @@ class Malroot_Alerting {
 	public static function send_test_email( $to ) {
 		$site    = wp_parse_url( home_url(), PHP_URL_HOST );
 		$subject = sprintf( '[Malroot TEST] Email delivery check — %s', $site );
-		$body    = implode( "\n", [
-			'This is a test email from Malroot Security.',
+		$min   = self::min_dispatch_severity();
+		$level = 'critical' === $min
+			? __( 'urgent issues only', 'malroot-security' )
+			: ( 'medium' === $min
+				? __( 'urgent, important and medium issues', 'malroot-security' )
+				: __( 'urgent and important issues', 'malroot-security' ) );
+		$login = ! empty( ( (array) get_option( 'malroot_settings', [] ) )['alert_login_activity'] )
+			? __( 'on', 'malroot-security' )
+			: __( 'off', 'malroot-security' );
+
+		$body = implode( "\n", [
+			__( 'This is a test email from Malroot Security.', 'malroot-security' ),
 			'',
-			'If you received this, email alerts are working correctly.',
+			__( 'If you received this, email alerts are working correctly.', 'malroot-security' ),
 			'',
-			'Site:    ' . home_url(),
-			'Time:    ' . current_time( 'mysql' ),
-			'Version: ' . MALROOT_VERSION,
+			/* translators: %s: the website URL */
+			sprintf( __( 'Website: %s', 'malroot-security' ), home_url() ),
+			/* translators: %s: current date and time */
+			sprintf( __( 'Time: %s', 'malroot-security' ), current_time( 'mysql' ) ),
 			'',
-			'You will receive alerts for:',
-			'  - Critical findings (immediately)',
-			'  - High findings (immediately)',
-			'  - New scan findings (when findings change)',
-			'  - 2FA failures',
-			'  - Admin logins from new locations',
+			/* translators: %s: which severities are emailed (e.g. "urgent and important issues") */
+			sprintf( __( 'With your current settings you will be emailed about: %s.', 'malroot-security' ), $level ),
+			/* translators: %s: "on" or "off" */
+			sprintf( __( 'Routine login-activity notifications are: %s.', 'malroot-security' ), $login ),
+			'',
+			__( 'You can change what you get notified about under Malroot → Settings → Alerting.', 'malroot-security' ),
 		] );
 
 		$sent = wp_mail( $to, $subject, $body );
@@ -149,7 +219,10 @@ class Malroot_Alerting {
 		$to = $settings['alert_email'] ?? get_option( 'admin_email' );
 		if ( $to ) {
 			$site    = wp_parse_url( home_url(), PHP_URL_HOST );
-			$subject = sprintf( '[Malroot %s] %s', strtoupper( $severity ), $site );
+			$prefix  = 'critical' === strtolower( $severity )
+				? __( 'Urgent security alert', 'malroot-security' )
+				: __( 'Security alert', 'malroot-security' );
+			$subject = sprintf( '%s — %s', $prefix, $site );
 			$body    = self::format_email( $severity, $event_type, $summary, $context );
 			wp_mail( $to, $subject, $body );
 		}
@@ -174,35 +247,84 @@ class Malroot_Alerting {
 		}
 	}
 
+	/**
+	 * Build a plain-language email a non-technical site owner can understand.
+	 * Technical detail (rule IDs, targets, raw context) is intentionally left
+	 * out of the email; it's all available on the dashboard for developers.
+	 */
 	private static function format_email( $severity, $event_type, $summary, array $context ) {
-		$lines = [];
-		$lines[] = '[Malroot ' . strtoupper( $severity ) . '] ' . wp_parse_url( home_url(), PHP_URL_HOST );
+		$site      = wp_parse_url( home_url(), PHP_URL_HOST );
+		$dashboard = $context['dashboard'] ?? admin_url( 'admin.php?page=malroot-security' );
+
+		$headline = self::severity_headline( $severity );
+
+		$lines   = [];
+		$lines[] = $headline;
+		$lines[] = str_repeat( '=', strlen( $headline ) );
+		$lines[] = '';
+		/* translators: %s: the website URL */
+		$lines[] = sprintf( __( 'Website: %s', 'malroot-security' ), $site );
 		$lines[] = '';
 		$lines[] = $summary;
-		$lines[] = '';
-		$lines[] = 'Event:    ' . $event_type;
-		$lines[] = 'Severity: ' . $severity;
-		$lines[] = 'Time:     ' . current_time( 'mysql' );
-		if ( ! empty( $context['top_findings'] ) ) {
+
+		if ( isset( $context['score'] ) ) {
 			$lines[] = '';
-			$lines[] = 'Top findings:';
-			foreach ( $context['top_findings'] as $f ) {
-				$lines[] = sprintf( '  [%s] %s — %s', strtoupper( $f->severity ), $f->rule_id, $f->summary );
-				$lines[] = '         target: ' . $f->target;
-			}
-			unset( $context['top_findings'] );
+			$lines[] = sprintf(
+				/* translators: %d: security score out of 100 */
+				__( 'Current safety score: %d out of 100.', 'malroot-security' ),
+				(int) $context['score']
+			);
 		}
-		if ( ! empty( $context ) ) {
+
+		// Turn each finding into a plain "what it is / what to do" block.
+		if ( ! empty( $context['top_findings'] ) && class_exists( 'Malroot_Plain_Language' ) ) {
 			$lines[] = '';
-			$lines[] = 'Context:';
-			foreach ( $context as $k => $v ) {
-				if ( is_scalar( $v ) ) {
-					$lines[] = sprintf( '  %s: %s', $k, $v );
-				} else {
-					$lines[] = sprintf( '  %s: %s', $k, wp_json_encode( $v ) );
+			$lines[] = __( "What we found", 'malroot-security' );
+			$lines[] = '-------------';
+			$n = 0;
+			foreach ( $context['top_findings'] as $f ) {
+				$n++;
+				$card  = Malroot_Plain_Language::translate( $f );
+				$title = isset( $card['title'] ) ? wp_strip_all_tags( $card['title'] ) : $f->summary;
+				$what  = isset( $card['what'] ) ? wp_strip_all_tags( $card['what'] ) : '';
+				$do    = isset( $card['action'] ) ? wp_strip_all_tags( $card['action'] ) : '';
+
+				$lines[] = '';
+				$lines[] = sprintf( '%d) %s', $n, $title );
+				if ( $what ) {
+					$lines[] = '   ' . $what;
+				}
+				if ( $do ) {
+					$lines[] = '   ' . __( 'What to do:', 'malroot-security' ) . ' ' . $do;
 				}
 			}
+		} elseif ( ! empty( $context['top_findings'] ) ) {
+			$lines[] = '';
+			foreach ( $context['top_findings'] as $f ) {
+				$lines[] = '- ' . $f->summary;
+			}
 		}
+
+		$lines[] = '';
+		$lines[] = __( 'Open your security dashboard to review and fix these:', 'malroot-security' );
+		$lines[] = $dashboard;
+		$lines[] = '';
+		$lines[] = __( 'This is an automated message from Malroot Security.', 'malroot-security' );
+
 		return implode( "\n", $lines );
+	}
+
+	/** Friendly, non-alarming subject-line-style headline per severity. */
+	private static function severity_headline( $severity ) {
+		switch ( strtolower( $severity ) ) {
+			case 'critical':
+				return __( 'Urgent: your website needs attention', 'malroot-security' );
+			case 'high':
+				return __( 'Important: please review your website security', 'malroot-security' );
+			case 'medium':
+				return __( 'Heads up: a security item to review', 'malroot-security' );
+			default:
+				return __( 'Website security update', 'malroot-security' );
+		}
 	}
 }

@@ -3,7 +3,10 @@
    ============================================================ */
 
 /* ---- Base wrap ------------------------------------------- */
-.malroot-wrap { max-width: 1200px; }
+/* Use the full width of the admin content area. The previous 1200px cap left
+   large empty space on wide screens. Cards/tables below flex to fill it, with
+   a generous ceiling so text lines stay readable on ultrawide monitors. */
+.malroot-wrap { max-width: 1800px; margin-right: 20px; }
 .malroot-wrap h1 { display:flex; align-items:center; gap:10px; }
 .malroot-wrap h1 .malroot-version {
 	font-size:13px; color:#888; font-weight:400; background:#f0f0f1;
