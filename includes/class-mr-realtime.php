@@ -36,10 +36,19 @@ class Malroot_Realtime {
 			add_action( 'user_register', [ __CLASS__, 'on_user_register' ], 10, 1 );
 		}
 
-		// 3) Scan options before they save
+		// 3) Scan options before they save.
 		if ( ! empty( $settings['realtime_scan_options'] ) ) {
 			add_filter( 'pre_update_option', [ __CLASS__, 'scan_option_value' ], 10, 3 );
-			add_filter( 'pre_add_option',    [ __CLASS__, 'scan_option_value' ], 10, 3 );
+
+			// There is no 'pre_add_option' filter in WordPress: add_option()
+			// applies no filter to the value, only the actions below. Hooking a
+			// non-existent filter meant BRAND NEW options were never scanned —
+			// which is the usual case, since malware creates its own option
+			// rather than editing one that already exists.
+			//
+			// We cannot block the insert, so catch it immediately afterwards and
+			// delete it. The payload is removed before anything reads it.
+			add_action( 'added_option', [ __CLASS__, 'scan_added_option' ], 10, 2 );
 		}
 
 		// 4) Outbound monitor
@@ -157,6 +166,59 @@ class Malroot_Realtime {
 	/* ---------------------------------------------------------------- */
 	/*  Option content scanner                                          */
 	/* ---------------------------------------------------------------- */
+
+	/**
+	 * Inspect an option the moment after it is created, and remove it if it
+	 * carries a known malware payload.
+	 *
+	 * @param string $option Option name.
+	 * @param mixed  $value  Stored value.
+	 */
+	public static function scan_added_option( $option, $value ) {
+		if ( ! is_string( $option ) || 0 === strpos( $option, 'malroot_' ) ) {
+			return;
+		}
+		if ( ! is_string( $value ) && ! is_array( $value ) ) {
+			return;
+		}
+		$haystack = is_string( $value ) ? $value : maybe_serialize( $value );
+		if ( ! $haystack || strlen( $haystack ) > 500000 ) {
+			return;
+		}
+
+		foreach ( self::$option_signatures as $regex => $label ) {
+			if ( ! preg_match( $regex, $haystack ) ) {
+				continue;
+			}
+
+			// Back the value up so the removal is reversible and reviewable.
+			if ( class_exists( 'Malroot_Findings' ) ) {
+				Malroot_Findings::record( [
+					'scan_id'  => (int) get_option( 'malroot_last_scan', time() ),
+					'module'   => 'realtime',
+					'rule_id'  => 'RT-OPT',
+					'severity' => 'critical',
+					'target'   => 'options:' . $option,
+					'summary'  => "Newly created option '{$option}' contained a malware payload and was removed",
+					'details'  => 'pattern=' . $label,
+					'status'   => 'fixed',
+				] );
+			}
+			if ( class_exists( 'Malroot_Quarantine' ) ) {
+				Malroot_Quarantine::backup_text( 'option:' . $option, $haystack );
+			}
+
+			delete_option( $option );
+
+			Malroot_Alerting::alert(
+				'critical',
+				'option_payload_removed',
+				"Removed newly created option '{$option}' containing malware pattern: {$label}",
+				[ 'option' => $option, 'pattern' => $label, 'ip' => self::ip() ]
+			);
+			return;
+		}
+	}
 
 	public static function scan_option_value( $value, $option, $old_value = null ) {
 		// Only inspect text-y values

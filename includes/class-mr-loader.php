@@ -90,12 +90,18 @@ class Malroot_Loader {
 			KEY idx_path (path(191))
 		) {$charset_collate};" );
 
-		// Default options
-		if ( ! get_option( 'malroot_admin_whitelist' ) ) {
+		// Default options.
+		// Use a false sentinel rather than a falsy test: an allowlist that is
+		// legitimately empty must not be mistaken for one that was never set,
+		// or re-activating the plugin would silently clear operator settings.
+		if ( false === get_option( 'malroot_admin_whitelist', false ) ) {
 			update_option( 'malroot_admin_whitelist', [] );
 		}
-		if ( ! get_option( 'malroot_last_scan' ) ) {
+		if ( false === get_option( 'malroot_last_scan', false ) ) {
 			update_option( 'malroot_last_scan', 0 );
+		}
+		if ( false === get_option( Malroot_Hardening::OPT, false ) ) {
+			update_option( Malroot_Hardening::OPT, Malroot_Hardening::defaults() );
 		}
 		if ( ! get_option( 'malroot_settings' ) ) {
 			update_option( 'malroot_settings', [
@@ -133,6 +139,7 @@ class Malroot_Loader {
 		Malroot_Ajax::register();
 		Malroot_Self_Integrity::register();
 		Malroot_TwoFactor::register();
+		Malroot_Hardening::register();
 
 		add_action( 'malroot_daily_scan', [ __CLASS__, 'run_full_scan' ] );
 
@@ -156,6 +163,7 @@ class Malroot_Loader {
 			new Malroot_Scanner_REST(),
 			new Malroot_Scanner_MuPlugins(),
 			new Malroot_Scanner_BotCloak(),
+			new Malroot_Scanner_Backdoor(),
 			new Malroot_Scanner_Integrity(),
 		];
 
@@ -172,6 +180,20 @@ class Malroot_Loader {
 		}
 
 		update_option( 'malroot_last_scan', $scan_id );
+
+		// Sweep unapproved administrators. The door hooks and the per-request
+		// watchdog both miss idle accounts — an injected admin that never logs in
+		// is invisible to them — so the scan is where those get caught.
+		if ( class_exists( 'Malroot_Admin_Guard' ) ) {
+			try {
+				Malroot_Admin_Guard::sweep( $scan_id );
+			} catch ( Throwable $e ) {
+				Malroot_Logger::error( 'Admin Guard sweep failed', [
+					'error'   => $e->getMessage(),
+					'scan_id' => $scan_id,
+				] );
+			}
+		}
 
 		// Auto-quarantine critical findings if the operator opted in
 		$settings = (array) get_option( 'malroot_settings', [] );

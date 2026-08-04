@@ -38,6 +38,9 @@ class Malroot_Admin_Guard {
 	const WHITELIST_OPT    = 'malroot_admin_whitelist'; // emails (shared with Users scanner)
 	const SEEDED_OPT       = 'malroot_admin_guard_seeded';
 
+	/** Scan currently in progress, so findings group with it in the dashboard. */
+	private static $scan_id = 0;
+
 	/** Known rogue-admin login names seen across the sites we manage. */
 	private static $known_bad_logins = [
 		'newsfeed', 'newsfood', 'wp_feed', 'wppanel', 'wp-panel',
@@ -67,6 +70,16 @@ class Malroot_Admin_Guard {
 		// touched a WordPress hook. Runs on every request, but is a no-op for
 		// logged-out visitors and approved admins (no DB queries on the hot path).
 		add_action( 'init', [ __CLASS__, 'guard_current_request' ], 2 );
+
+		// Turnstile: refuse to authenticate an unapproved administrator at all.
+		// The watchdog above only fires once a session already exists, so on its
+		// own it lets an injected admin complete one login before being caught.
+		add_filter( 'authenticate', [ __CLASS__, 'block_unapproved_login' ], 99, 1 );
+
+		// Capability floor: even if a session is somehow established, an
+		// unapproved administrator holds no administrative capability. This closes
+		// the window between authentication and the init:2 watchdog.
+		add_filter( 'user_has_cap', [ __CLASS__, 'strip_unapproved_caps' ], 99, 4 );
 	}
 
 	public static function is_enabled() {
@@ -90,6 +103,7 @@ class Malroot_Admin_Guard {
 	 */
 	public static function maybe_seed() {
 		if ( get_option( self::SEEDED_OPT ) ) {
+			self::repair_allowlist();
 			return;
 		}
 
@@ -126,6 +140,70 @@ class Malroot_Admin_Guard {
 				'approved_ids'    => $ids,
 				'approved_emails' => $emails,
 			] );
+		}
+	}
+
+	/**
+	 * Keep the allowlist internally consistent after seeding.
+	 *
+	 * Seeding is a one-shot: once SEEDED_OPT is set, maybe_seed() used to return
+	 * immediately forever. That made any later loss of the email allowlist
+	 * permanent and silent. On cityagecare.com the live state was
+	 * malroot_admin_approved_ids = [1] with malroot_admin_whitelist = [] — the
+	 * two disagreed, which disabled the email fallback in is_approved() and left
+	 * the old Users-scanner rule UA-012 (gated on a non-empty whitelist) dead.
+	 *
+	 * This repair is deliberately one-directional: emails are only ever derived
+	 * FROM already-approved user IDs. It can restore the owner's own address, and
+	 * it can never promote an unapproved account into the allowlist. Stale IDs
+	 * for deleted users are dropped.
+	 *
+	 * Throttled to once an hour so the init hot path stays cheap.
+	 */
+	private static function repair_allowlist() {
+		if ( get_transient( 'malroot_allowlist_checked' ) ) {
+			return;
+		}
+		set_transient( 'malroot_allowlist_checked', 1, HOUR_IN_SECONDS );
+
+		$ids = array_map( 'intval', (array) get_option( self::APPROVED_IDS_OPT, [] ) );
+		if ( empty( $ids ) ) {
+			return; // nothing approved: enforcement is already inert, leave it alone
+		}
+
+		$live_ids = [];
+		$emails   = [];
+		foreach ( $ids as $id ) {
+			$u = get_userdata( $id );
+			if ( ! $u ) {
+				continue; // user was deleted
+			}
+			$live_ids[] = (int) $u->ID;
+			if ( ! empty( $u->user_email ) ) {
+				$emails[] = strtolower( $u->user_email );
+			}
+		}
+
+		if ( empty( $live_ids ) ) {
+			return; // refuse to empty the allowlist automatically
+		}
+
+		$current_wl = array_map( 'strtolower', (array) get_option( self::WHITELIST_OPT, [] ) );
+		$missing    = array_diff( $emails, $current_wl );
+
+		if ( $live_ids !== $ids ) {
+			update_option( self::APPROVED_IDS_OPT, array_values( array_unique( $live_ids ) ), false );
+		}
+
+		if ( ! empty( $missing ) ) {
+			$merged = array_values( array_unique( array_merge( $current_wl, $emails ) ) );
+			update_option( self::WHITELIST_OPT, $merged );
+
+			if ( class_exists( 'Malroot_Logger' ) ) {
+				Malroot_Logger::info( 'Admin Guard repaired the approved-admin email allowlist', [
+					'restored' => array_values( $missing ),
+				] );
+			}
 		}
 	}
 
@@ -283,6 +361,189 @@ class Malroot_Admin_Guard {
 	}
 
 	/* ---------------------------------------------------------------- */
+	/*  Turnstile: refuse the login outright                            */
+	/* ---------------------------------------------------------------- */
+
+	/**
+	 * Deny authentication for administrators that are not on the allowlist.
+	 *
+	 * Runs late on the `authenticate` chain, so the password has already been
+	 * verified by the time we see a WP_User. Returning a WP_Error stops the login
+	 * before any session token or auth cookie is issued.
+	 *
+	 * @param null|WP_User|WP_Error $user
+	 * @return null|WP_User|WP_Error
+	 */
+	public static function block_unapproved_login( $user ) {
+		if ( ! $user instanceof WP_User ) {
+			return $user; // wrong credentials, or another filter already objected
+		}
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			return $user;
+		}
+		if ( ! get_option( self::SEEDED_OPT ) ) {
+			return $user; // never enforce before the allowlist exists
+		}
+		if ( ! in_array( 'administrator', (array) $user->roles, true ) ) {
+			return $user; // non-admin logins are not our concern
+		}
+		if ( self::is_approved( $user ) ) {
+			return $user;
+		}
+
+		self::log_login_attempt( $user );
+
+		Malroot_Alerting::alert(
+			'critical',
+			'admin_guard_login_blocked',
+			"Blocked a login attempt by unapproved administrator '{$user->user_login}'",
+			[
+				'user_id'    => (int) $user->ID,
+				'user_login' => $user->user_login,
+				'user_email' => $user->user_email,
+				'ip'         => self::ip(),
+			]
+		);
+
+		return new WP_Error(
+			'malroot_admin_not_approved',
+			__( 'This account is not an approved administrator. Sign-in has been blocked by Malroot Security.', 'malroot-security' )
+		);
+	}
+
+	private static function log_login_attempt( $user ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'malroot_logins';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->insert( $table, [
+			'attempted_login' => $user->user_login,
+			'ip'              => self::ip(),
+			'ua'              => isset( $_SERVER['HTTP_USER_AGENT'] )
+				? substr( sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ), 0, 500 )
+				: '',
+			'success'         => 0,
+		], [ '%s', '%s', '%s', '%d' ] );
+	}
+
+	/* ---------------------------------------------------------------- */
+	/*  Capability floor                                                */
+	/* ---------------------------------------------------------------- */
+
+	/**
+	 * Strip every capability from an unapproved administrator.
+	 *
+	 * Defence in depth for the window between a session being established and
+	 * the init:2 watchdog running — and for any code path that reads
+	 * capabilities before `init` at all.
+	 *
+	 * @param array   $allcaps
+	 * @param array   $caps
+	 * @param array   $args
+	 * @param WP_User $user
+	 * @return array
+	 */
+	public static function strip_unapproved_caps( $allcaps, $caps, $args, $user ) {
+		if ( empty( $user->ID ) || empty( $allcaps['administrator'] ) ) {
+			return $allcaps; // only administrators are in scope
+		}
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			return $allcaps;
+		}
+
+		static $cache = [];
+		$id = (int) $user->ID;
+
+		if ( ! isset( $cache[ $id ] ) ) {
+			// Resolve once per request per user. Guarded so a capability check
+			// triggered from inside this filter cannot recurse.
+			$cache[ $id ] = true;
+			if ( get_option( self::SEEDED_OPT ) ) {
+				$cache[ $id ] = self::is_approved( $user );
+			}
+		}
+
+		if ( $cache[ $id ] ) {
+			return $allcaps;
+		}
+
+		return []; // no role, no capabilities
+	}
+
+	/* ---------------------------------------------------------------- */
+	/*  Dormant-account sweep                                           */
+	/* ---------------------------------------------------------------- */
+
+	/**
+	 * Neutralise unapproved administrators that are sitting idle.
+	 *
+	 * This is the gap that let nine rogue admins survive on cityagecare.com for
+	 * five weeks: the door hooks only fire at creation time (and were bypassed
+	 * entirely, since the accounts were not created through the WordPress API),
+	 * and the watchdog only fires for an account that is actively logged in.
+	 * Eight of the nine had never logged in, so nothing ever looked at them.
+	 *
+	 * Called at the end of a full scan. Honours the admin_guard_autoremediate
+	 * setting and the "never strip the last approved administrator" rail.
+	 *
+	 * @return array{checked:int,neutralised:int,detected:int}
+	 */
+	public static function sweep( $scan_id = 0 ) {
+		$result = [ 'checked' => 0, 'neutralised' => 0, 'detected' => 0 ];
+
+		if ( ! self::is_enabled() || ! get_option( self::SEEDED_OPT ) ) {
+			return $result;
+		}
+
+		// Attribute anything we record to the scan that invoked us, otherwise the
+		// findings land under their own timestamp and the dashboard — which lists
+		// by scan id — never shows them.
+		self::$scan_id = (int) $scan_id;
+
+		global $wpdb;
+		$cap_key = $wpdb->get_blog_prefix() . 'capabilities';
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT u.ID FROM {$wpdb->users} u
+			   INNER JOIN {$wpdb->usermeta} m ON m.user_id = u.ID
+			  WHERE m.meta_key = %s AND m.meta_value LIKE %s",
+			$cap_key,
+			'%administrator%'
+		) );
+
+		$current = get_current_user_id();
+
+		foreach ( $ids as $id ) {
+			$id = (int) $id;
+			$u  = get_userdata( $id );
+			if ( ! $u ) {
+				continue;
+			}
+			$result['checked']++;
+
+			if ( self::is_approved( $u ) ) {
+				continue;
+			}
+			if ( $id === $current ) {
+				continue; // never act on the operator running the scan
+			}
+
+			$result['detected']++;
+			if ( self::neutralize( $id, 'unapproved administrator found by scheduled sweep (account was idle)' ) ) {
+				$result['neutralised']++;
+			}
+		}
+
+		if ( $result['detected'] > 0 && class_exists( 'Malroot_Logger' ) ) {
+			Malroot_Logger::warning( 'Admin Guard sweep finished', $result );
+		}
+
+		self::$scan_id = 0;
+
+		return $result;
+	}
+
+	/* ---------------------------------------------------------------- */
 	/*  Remediation                                                     */
 	/* ---------------------------------------------------------------- */
 
@@ -338,7 +599,7 @@ class Malroot_Admin_Guard {
 			return;
 		}
 		Malroot_Findings::record( [
-			'scan_id'  => time(),
+			'scan_id'  => self::$scan_id ? self::$scan_id : time(),
 			'module'   => 'admin-guard',
 			'rule_id'  => 'AG-001',
 			'severity' => 'critical',

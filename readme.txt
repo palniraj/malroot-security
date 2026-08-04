@@ -4,7 +4,7 @@ Tags: security, malware, scanner, backdoor, firewall
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.6
+Stable tag: 1.0.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -133,6 +133,52 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 
 == Changelog ==
 
+= 1.0.9 =
+This release comes out of a live investigation where nine rogue administrators and a full backdoor kit sat on a site for five weeks while Malroot reported only one minor issue. The causes were architectural, so the fixes are too.
+
+Rogue administrators are now found by comparison, not by name:
+* The user scanner previously matched a fixed list of login names, registration dates and empty emails. Randomised names such as `w2s_c428304169fc` and `wp_admin_e38341` defeated all of it — `wp_admin_e38341` is not equal to `wp_admin`. Admin Guard already held the answer (an approved-administrator allowlist) but nothing ever compared the live admin list against it.
+* New rule UA-001 reports any administrator that is not on the approved list, whatever it is called. UA-003 independently reports any admin created after monitoring began that was never approved. Both caught 9 of 9 accounts in testing, with no false positives.
+* Added UA-002 (email on a domain that cannot receive mail, e.g. .local, .invalid, example.com), UA-004 (several admins created in one burst), UA-005 (machine-generated login names), UA-006 (admin that has never logged in and never created content), and UA-014 (the allowlist has never been set up, so this checking is off).
+* Administrator roles are now read from usermeta directly. Malware can filter pre_user_query to hide its account from get_users(), and the kit found in this investigation did exactly that.
+
+Unapproved administrators can no longer be used:
+* They are refused at login, before any session or auth cookie is issued.
+* They hold no administrative capability even if a session already exists, closing the gap between authentication and the existing init watchdog.
+* A scan now sweeps idle accounts. The previous door hooks only fired at creation time and the watchdog only fired for an account that was actively signed in — eight of the nine had never logged in, so nothing ever looked at them.
+
+New behavioural backdoor scanner. The file scanner matched literal signatures and detected none of the eight malicious files in this incident: eval('?>' . $remote) slipped past a rule expecting eval(base64_decode, hex escapes hid shell_exec, and a 16 MB shell script was never opened because it was not a .php file. The new scanner describes behaviour instead — creating administrators, hiding rows from the user list, hiding from the Plugins page, running downloaded code, detecting debuggers, or carrying shell scripts and binaries. It found 8 of 8, with no false positives.
+
+New guided cleanup. Removes threats in the order that stops them returning: scheduled jobs first, then the code that recreates accounts, then the accounts, then cloaking rules and spam pages. Everything is backed up and reversible. Cleaning accounts before their cron job is why "we removed it and it came back" is so common.
+
+New hardening options, chosen from the observed attack surface rather than a generic checklist: XML-RPC off (it absorbed over 900 probe requests and allows batched password guessing), PHP execution blocked in uploads, the built-in file editor disabled, anonymous user enumeration blocked via REST and ?author=, and the version number removed.
+
+Fixes:
+* REST namespaces are now attributed to the plugin that registered them by reflecting on the route callback. Previously the match was made on name similarity alone, so `wslu/` — which belongs to WP Social — was reported as an unrecognised endpoint. This was a false positive.
+* Newly created options were never scanned: the code hooked pre_add_option, which does not exist in WordPress. New options are now checked on added_option and removed if they carry a known payload. Malware normally creates its own option rather than editing an existing one, so this was the common case.
+* Admin Guard findings were stamped with their own timestamp instead of the scan id, so its remediation never appeared on the dashboard.
+* The approved-admin allowlist can now repair itself. Seeding ran once and never again, so if the email allowlist was lost the loss was permanent and silent — which had disabled one of the user rules entirely. Repair only ever derives emails from already-approved accounts, so it cannot approve an attacker.
+* Re-activating the plugin no longer resets an allowlist that is legitimately empty.
+* Quarantine can now unschedule WP-Cron jobs. It previously handled MySQL events only, while malware persistence almost always uses WP-Cron.
+
+= 1.0.8 =
+* Fewer false positives for must-use plugins: legitimate host and plugin drop-ins (Hostinger auto-updates/preview/onboarding, WP Staging optimizer, Installatron automation, and common WP Engine/Kinsta files) are now recognised and no longer flagged. An unrecognised mu-plugin is now shown as a low-key "review" item, not as "self-reinstalling malware" — that stronger wording is reserved for mu-plugins that actually write files at runtime or are zero-byte stubs.
+* Clearer verdict for missing files: when a plugin/theme file is gone, Malroot now distinguishes "removed by an update (expected)" from "a file that should exist is missing — reinstall the plugin/theme to restore it", instead of the ambiguous "origin unknown".
+* Comment-spam cleanup now reliably finds pending/classic comments (removed a query filter that could exclude comments stored with an empty type).
+
+= 1.0.7 =
+* Far fewer false positives after plugin, theme, and WordPress updates. File-integrity findings are now checked against the component's version: when a plugin, theme, or core version has changed, its file changes are recognised as an expected update and accepted silently instead of asking you to review them.
+* Deleted plugin files are now verified authoritatively against the official WordPress.org checksums for the installed version. If the current version no longer ships a file, its removal is accepted automatically — this clears the large lists of "file deleted" notices seen after updating WooCommerce, Google Site Kit, Yoast SEO and similar plugins.
+* WordPress-managed paths (`wp-content/languages`, `wp-content/upgrade`) are treated as expected churn, so translation-file updates no longer appear as findings.
+* Improved code analysis for files with no official checksum (themes, custom code): the verifier now reads the file and reports in plain language whether it contains suspicious patterns, so clean files are no longer pushed toward deletion. Fixed a `preg_replace` heuristic that misfired on legitimate theme code.
+* Authoritative checks now run before content heuristics, fixing false "malware pattern" flags on legitimate plugin files (e.g. LiteSpeed Cache, Jetpack).
+* Safer review actions: a modified core/plugin/theme file now recommends reinstalling the official copy instead of deleting it, and already-deleted files no longer show a "remove" button.
+* REST endpoints registered by installed, active plugins are correctly attributed and no longer flagged as "unknown" — including WooCommerce family namespaces such as `wc-push-notifications` and `wc-shipstation`, plus Jetpack, LiteSpeed and others.
+* Incident Response now also removes dormant injected administrators detected by signature (duplicate login name, no email address, generic wordpress.com profile URL), not just known bad names — with safeguards that never remove you or the last administrator.
+* New: block and clean up comment spam. Bot comments (fake "TikTok"/"BBC Post" style) can be blocked before they are stored, and a Spam Cleanup tool moves existing spam comments to Trash. Blocking a spam comment also denies the malicious after_insert_comment trigger its input.
+* Alerting is now configurable and written in plain language: choose which severities are emailed, turn routine login-activity notifications on or off (off by default), and receive human-readable emails instead of technical dumps.
+* UI: the admin screens now use the full width of the page, and fixed the icon alignment on the "Run cleanup now" button.
+
 = 1.0.6 =
 * Privacy: Two-Factor Authentication no longer sends the TOTP secret to an external QR-code image service (api.qrserver.com). The setup key is now shown as text for manual entry into any authenticator app, so the secret never leaves your server.
 * Privacy: IP geolocation (ipapi.co) is now strictly opt-in and OFF by default. No IP address is sent anywhere unless an administrator enables "IP geolocation" on the Settings page.
@@ -179,6 +225,12 @@ Provider: Slack. Privacy policy: https://slack.com/trust/privacy/privacy-policy.
 * CSV export, "Ignore finding" workflow, and self-integrity check.
 
 == Upgrade Notice ==
+
+= 1.0.8 =
+Recognises legitimate host/plugin must-use plugins (Hostinger, WP Staging, Installatron, etc.) so they are no longer flagged as malware, gives clearer guidance for missing files, and fixes comment-spam cleanup so it reliably finds pending comments.
+
+= 1.0.7 =
+Far fewer false positives after updates: integrity checks now use plugin/theme/core versions and official WordPress.org checksums. Adds comment-spam blocking and cleanup, configurable plain-language alerts, and safer review actions.
 
 = 1.0.6 =
 Privacy fixes for WordPress.org compliance: 2FA setup no longer sends your secret to an external QR service, IP geolocation is now opt-in and off by default, and quarantined files are backed up to the database instead of the uploads folder.

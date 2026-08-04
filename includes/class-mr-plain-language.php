@@ -121,6 +121,106 @@ class Malroot_Plain_Language {
 		// User findings
 		// ----------------------------------------------------------------
 		if ( $module === 'users' ) {
+			$who = esc_html( preg_replace( '/#\d+$/', '', str_replace( 'users:', '', $target ) ) );
+
+			// UA-001 is the primary rule: the account is not on the approved list.
+			if ( $rule === 'UA-001' ) {
+				return [
+					'icon'        => '🚨',
+					'title'       => __( 'Administrator you never approved', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: username */
+						__( 'The account <strong>%s</strong> has full administrator access to your website, but it is not on your approved administrator list.', 'malroot-security' ),
+						$who
+					),
+					'why_bad'     => __( 'An administrator can change any page, read every customer record, add more accounts, and install software. Malroot recorded who your real administrators were, and this account is not one of them — so either someone added it without permission, or it was created by malware.', 'malroot-security' ),
+					'action'      => __( 'If you do not recognise this account, click "Remove Account". If it belongs to a colleague or developer you trust, open Malroot > Settings and add them to the approved list instead.', 'malroot-security' ),
+					'action_type' => 'quarantine',
+					'safe_to_fix' => true,
+				];
+			}
+			if ( $rule === 'UA-002' ) {
+				return [
+					'icon'        => '📭',
+					'title'       => __( 'Admin account uses an email that cannot receive mail', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: username */
+						__( 'The administrator <strong>%s</strong> has an email address on a domain that can never receive email — for example one ending in .local, .invalid, or example.com.', 'malroot-security' ),
+						$who
+					),
+					'why_bad'     => __( 'A real person needs a working email address to reset their password or receive notifications. Addresses like these are typed in automatically by hacking tools, which need to fill the field but do not care about replies.', 'malroot-security' ),
+					'action'      => __( 'Click "Remove Account". No genuine team member would use an address that cannot receive mail.', 'malroot-security' ),
+					'action_type' => 'quarantine',
+					'safe_to_fix' => true,
+				];
+			}
+			if ( $rule === 'UA-003' ) {
+				return [
+					'icon'        => '🚨',
+					'title'       => __( 'Admin account appeared after monitoring started', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: username */
+						__( 'The administrator <strong>%s</strong> was added to your site after Malroot began watching, and it was never approved through your WordPress dashboard.', 'malroot-security' ),
+						$who
+					),
+					'why_bad'     => __( 'When you add an administrator normally, Malroot sees it happen and approves it automatically. This account skipped that entirely, which means it was written straight into your database rather than created through WordPress.', 'malroot-security' ),
+					'action'      => __( 'Treat this as a confirmed break-in. Click "Remove Account", then change your hosting and database passwords, because whoever did this had direct access to your database.', 'malroot-security' ),
+					'action_type' => 'quarantine',
+					'safe_to_fix' => true,
+				];
+			}
+			if ( $rule === 'UA-004' ) {
+				return [
+					'icon'        => '📈',
+					'title'       => __( 'Several admin accounts created at once', 'malroot-security' ),
+					'what'        => __( 'Multiple administrator accounts were created within a few days of each other.', 'malroot-security' ),
+					'why_bad'     => __( 'Real websites gain administrators slowly — one person joins, then maybe another months later. A cluster appearing together is the signature of an automated attack script creating spare keys so it can get back in after you remove one.', 'malroot-security' ),
+					'action'      => __( 'Review every account listed here. Remove the ones you do not recognise, then change your passwords.', 'malroot-security' ),
+					'action_type' => 'manual',
+					'safe_to_fix' => false,
+				];
+			}
+			if ( $rule === 'UA-005' ) {
+				return [
+					'icon'        => '🎲',
+					'title'       => __( 'Admin username looks computer-generated', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: username */
+						__( 'The administrator name <strong>%s</strong> contains a random string of letters and numbers.', 'malroot-security' ),
+						$who
+					),
+					'why_bad'     => __( 'Attack tools generate a random name for each account so that no two hacked sites look the same, which defeats security plugins that only search for a fixed list of known bad names. People choose names they can remember.', 'malroot-security' ),
+					'action'      => __( 'Check whether you recognise this account. If not, click "Remove Account".', 'malroot-security' ),
+					'action_type' => 'quarantine',
+					'safe_to_fix' => false,
+				];
+			}
+			if ( $rule === 'UA-006' ) {
+				return [
+					'icon'        => '💤',
+					'title'       => __( 'Unused admin account sitting idle', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: username */
+						__( 'The administrator <strong>%s</strong> has never signed in and has never written any content, yet it holds full control of your site.', 'malroot-security' ),
+						$who
+					),
+					'why_bad'     => __( 'This is what a spare key looks like. Attackers create accounts and leave them untouched so they blend in, then use them weeks later once you have stopped looking. An unused administrator has no legitimate purpose.', 'malroot-security' ),
+					'action'      => __( 'Click "Remove Account". If you created it for someone who has not started yet, give them a lower role until they do.', 'malroot-security' ),
+					'action_type' => 'quarantine',
+					'safe_to_fix' => true,
+				];
+			}
+			if ( $rule === 'UA-014' ) {
+				return [
+					'icon'        => '⚙️',
+					'title'       => __( 'Approved administrator list has not been set up', 'malroot-security' ),
+					'what'        => __( 'Malroot does not yet have a record of which administrators you trust, so it cannot tell a genuine admin apart from one added by an attacker.', 'malroot-security' ),
+					'why_bad'     => __( 'This is the single most useful check Malroot performs on user accounts. Without it, a rogue administrator with a normal-looking name and email will not be reported.', 'malroot-security' ),
+					'action'      => __( 'Open Malroot > Settings and confirm your administrator list. It takes a moment and switches this protection on.', 'malroot-security' ),
+					'action_type' => 'manual',
+					'safe_to_fix' => false,
+				];
+			}
 			if ( $rule === 'UA-010' || $rule === 'UA-009' ) {
 				return [
 					'icon'        => '👤',
@@ -158,6 +258,145 @@ class Malroot_Plain_Language {
 					'safe_to_fix' => false,
 				];
 			}
+		}
+
+		// ----------------------------------------------------------------
+		// Behavioural backdoor findings
+		// ----------------------------------------------------------------
+		if ( $module === 'backdoor' ) {
+			$file = esc_html( basename( str_replace( 'plugins:', '', $target ) ) );
+			$folder = esc_html( str_replace( 'plugins:', '', $target ) );
+
+			$cards = [
+				'BD-001' => [
+					'icon'    => '🚨',
+					'title'   => __( 'A plugin is creating secret admin accounts', 'malroot-security' ),
+					'what'    => __( 'This file contains instructions to build a new administrator account on your site by itself, with no one clicking anything.', 'malroot-security' ),
+					'why_bad' => __( 'This is why deleting the fake admin never works — the code simply makes it again on the next page load, or on a daily schedule. You have to remove this file, not just the account.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File". Then delete the accounts it created and change your passwords.', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-002' => [
+					'icon'    => '🙈',
+					'title'   => __( 'A plugin is hiding user accounts from you', 'malroot-security' ),
+					'what'    => __( 'This file changes the list of users WordPress shows you, so that one specific account never appears.', 'malroot-security' ),
+					'why_bad' => __( 'You cannot remove an account you cannot see. This is how an attacker keeps a way in while your Users page looks completely normal.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File", then re-check your Users page — accounts you have never seen before may now appear.', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-003' => [
+					'icon'    => '🫥',
+					'title'   => __( 'A plugin is hiding itself from your Plugins page', 'malroot-security' ),
+					'what'    => __( 'This file removes its own entry from your list of installed plugins.', 'malroot-security' ),
+					'why_bad' => __( 'No honest plugin hides. This exists so you cannot find or deactivate it, and it often hides pending-update warnings too, so your site looks healthy.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File". Check your Plugins page afterwards for entries that were previously invisible.', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-004' => [
+					'icon'    => '🦠',
+					'title'   => __( 'A plugin runs code fetched from the internet', 'malroot-security' ),
+					'what'    => sprintf(
+						/* translators: %s: file name */
+						__( 'The file <code>%s</code> downloads instructions from somewhere else and runs them on your server.', 'malroot-security' ),
+						$file
+					),
+					'why_bad' => __( 'Whoever controls that remote address controls your website. They can change what it does at any moment without touching your site again, which is why nothing looks wrong until it is too late.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File" immediately. This is a live remote control channel into your server.', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-005' => [
+					'icon'    => '🧩',
+					'title'   => __( 'A plugin file is deliberately scrambled', 'malroot-security' ),
+					'what'    => __( 'The instructions in this file have been encoded so they cannot be read normally, and are unpacked only while the page is loading.', 'malroot-security' ),
+					'why_bad' => __( 'Legitimate plugins have no reason to hide what they do. Scrambling exists purely to get past security scanners that search for recognisable words.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File" unless you know exactly why this file is encoded.', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-006' => [
+					'icon'    => '🧩',
+					'title'   => __( 'A plugin file was run through an obfuscation tool', 'malroot-security' ),
+					'what'    => __( 'This file carries the signature of a tool whose only purpose is to make code unreadable.', 'malroot-security' ),
+					'why_bad' => __( 'These tools are marketed specifically for slipping code past malware scanners. Genuine plugins ship readable code.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File".', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-007' => [
+					'icon'    => '⚙️',
+					'title'   => __( 'A program that runs server commands is in your plugin folder', 'malroot-security' ),
+					'what'    => sprintf(
+						/* translators: %s: file name */
+						__( '<code>%s</code> is not website code — it is a program that issues commands directly to the server operating system.', 'malroot-security' ),
+						$file
+					),
+					'why_bad' => __( 'Files like this are used to open a lasting connection out to the attacker, which slips past firewalls because your own server starts the conversation. WordPress plugins never need this.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File", then ask your host to check for unexpected running processes and outbound connections.', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-008' => [
+					'icon'    => '🕵️',
+					'title'   => __( 'A plugin hides when it thinks it is being inspected', 'malroot-security' ),
+					'what'    => __( 'This file checks whether it is running inside a testing environment or under developer tools, and disappears if it thinks it is being watched.', 'malroot-security' ),
+					'why_bad' => __( 'Only malware behaves this way. It is designed so that when you or your developer go looking, everything appears fine.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File". Treat the whole plugin folder as compromised.', 'malroot-security' ),
+					'fix'     => true,
+				],
+				'BD-009' => [
+					'icon'    => '📦',
+					'title'   => __( 'A plugin folder was uploaded by hand', 'malroot-security' ),
+					'what'    => sprintf(
+						/* translators: %s: folder name */
+						__( 'The folder <code>%s</code> does not match the name of the plugin inside it, which means it was not installed through WordPress.', 'malroot-security' ),
+						$folder
+					),
+					'why_bad' => __( 'Attackers upload a renamed copy of a well-known plugin so the folder looks familiar in your file manager, while extra files hide inside it. It also means WordPress will never offer updates for it.', 'malroot-security' ),
+					'action'  => __( 'Compare this folder against a fresh copy of the real plugin. If you did not upload it yourself, remove the whole folder and reinstall the plugin from your Plugins page.', 'malroot-security' ),
+					'fix'     => false,
+				],
+				'BD-010' => [
+					'icon'    => '🗂️',
+					'title'   => __( 'A hidden file manager is installed on your site', 'malroot-security' ),
+					'what'    => sprintf(
+						/* translators: %s: file name */
+						__( '<code>%s</code> lets anyone who knows the right web address and password create, edit and delete files anywhere on your server.', 'malroot-security' ),
+						$file
+					),
+					'why_bad' => __( 'This is a complete control panel for your server, sitting outside WordPress with its own password. It is how an attacker returns after you clean up, and how they delete other people\'s malware to keep your site to themselves.', 'malroot-security' ),
+					'action'  => __( 'Click "Remove File" immediately, then change every password: hosting, database, FTP and WordPress.', 'malroot-security' ),
+					'fix'     => true,
+				],
+			];
+
+			if ( isset( $cards[ $rule ] ) ) {
+				$c = $cards[ $rule ];
+				return [
+					'icon'        => $c['icon'],
+					'title'       => $c['title'],
+					'what'        => $c['what'],
+					'why_bad'     => $c['why_bad'],
+					'action'      => $c['action'],
+					'action_type' => $c['fix'] ? 'quarantine' : 'manual',
+					'safe_to_fix' => $c['fix'],
+				];
+			}
+		}
+
+		// ----------------------------------------------------------------
+		// Admin Guard findings
+		// ----------------------------------------------------------------
+		if ( $module === 'admin-guard' ) {
+			return [
+				'icon'        => '🛡️',
+				'title'       => __( 'Unapproved administrator was shut down', 'malroot-security' ),
+				'what'        => sprintf(
+					/* translators: %s: username */
+					__( 'The account <strong>%s</strong> had administrator access without being on your approved list. Malroot has removed its access and signed it out.', 'malroot-security' ),
+					esc_html( preg_replace( '/#\d+$/', '', str_replace( 'users:', '', $target ) ) )
+				),
+				'why_bad'     => __( 'The account itself still exists but can no longer change anything. It was almost certainly created by an attacker, because it never went through the normal WordPress process of one administrator adding another.', 'malroot-security' ),
+				'action'      => __( 'Delete the account to finish the job, then change your hosting and database passwords. If this was a colleague, add them to the approved list in Malroot > Settings and restore their role.', 'malroot-security' ),
+				'action_type' => 'quarantine',
+				'safe_to_fix' => true,
+			];
 		}
 
 		// ----------------------------------------------------------------
@@ -310,16 +549,37 @@ class Malroot_Plain_Language {
 		// REST API findings
 		// ----------------------------------------------------------------
 		if ( $module === 'rest' ) {
+			$ns = esc_html( str_replace( 'rest:', '', $target ) );
+
+			// RT-007: the endpoint belongs to a plugin the site actually has
+			// installed. Low priority, reassuring wording.
+			if ( $rule === 'RT-007' ) {
+				return [
+					'icon'        => '🔌',
+					'title'       => __( 'Installed plugin exposes a sensitive API endpoint', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: namespace */
+						__( 'The API endpoint <code>%s</code> belongs to one of your installed, active plugins. It handles sensitive actions, so we list it here for your awareness.', 'malroot-security' ),
+						$ns
+					),
+					'why_bad'     => __( 'This is not a sign of a hack. It only matters if you no longer trust or use the plugin that owns this endpoint.', 'malroot-security' ),
+					'action'      => __( 'No action needed unless you do not recognise the plugin. Keep it updated to the latest version.', 'malroot-security' ),
+					'action_type' => 'info',
+					'safe_to_fix' => false,
+				];
+			}
+
+			// RT-001 / RT-006: namespace could NOT be matched to any installed plugin.
 			return [
 				'icon'        => '🔌',
-				'title'       => __( 'Unusual plugin API endpoint detected', 'malroot-security' ),
+				'title'       => __( 'Unknown API endpoint not linked to any installed plugin', 'malroot-security' ),
 				'what'        => sprintf(
 					/* translators: %s: namespace */
-					__( 'A plugin has registered an API endpoint called <code>%s</code> that is not from a recognised plugin.', 'malroot-security' ),
-					esc_html( str_replace( 'rest:', '', $target ) )
+					__( 'An API endpoint called <code>%s</code> is registered on your site, but it does not match any plugin you have installed.', 'malroot-security' ),
+					$ns
 				),
-				'why_bad'     => __( 'Malicious plugins sometimes create hidden API endpoints that let attackers control your site remotely without needing to log in.', 'malroot-security' ),
-				'action'      => __( 'Check your installed plugins list. If you see any plugin you did not install, deactivate and delete it immediately.', 'malroot-security' ),
+				'why_bad'     => __( 'Malicious code sometimes creates hidden API endpoints that let attackers control your site remotely without logging in. Because this one has no matching plugin, it is worth checking.', 'malroot-security' ),
+				'action'      => __( 'Review your installed plugins. If you cannot account for this endpoint, treat your site as possibly compromised and run a full scan and cleanup.', 'malroot-security' ),
 				'action_type' => 'manual',
 				'safe_to_fix' => false,
 			];
@@ -329,6 +589,24 @@ class Malroot_Plain_Language {
 		// mu-plugin findings
 		// ----------------------------------------------------------------
 		if ( $module === 'muplugins' ) {
+			// SH-007 = writes files at runtime / zero-byte stub → genuine
+			// self-healing malware pattern. SH-006 = simply not on the allowlist,
+			// which is very often a legitimate host/plugin must-use plugin.
+			if ( $rule === 'SH-006' ) {
+				return [
+					'icon'        => '🧩',
+					'title'       => __( 'Unrecognised must-use plugin', 'malroot-security' ),
+					'what'        => sprintf(
+						/* translators: %s: mu-plugin file name */
+						__( 'A must-use plugin (<code>%s</code>) is present that Malroot does not recognise. Must-use plugins load automatically. Hosts (e.g. Hostinger, WP Engine, Kinsta) and plugins (e.g. WP Staging, Installatron) legitimately place files here.', 'malroot-security' ),
+						esc_html( str_replace( 'muplugins:', '', $target ) )
+					),
+					'why_bad'     => __( 'This is only a concern if you do not recognise it. It is not, by itself, a sign of malware.', 'malroot-security' ),
+					'action'      => __( 'If it belongs to your host or a plugin you use, leave it. If you do not recognise it, view the file details before removing.', 'malroot-security' ),
+					'action_type' => 'manual',
+					'safe_to_fix' => false,
+				];
+			}
 			return [
 				'icon'        => '🔄',
 				'title'       => __( 'Self-reinstalling malware component found', 'malroot-security' ),

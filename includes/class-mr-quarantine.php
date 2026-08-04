@@ -145,6 +145,9 @@ class Malroot_Quarantine {
 		} elseif ( strpos( $target, 'event:' ) === 0 ) {
 			$ok = self::quarantine_event( substr( $target, 6 ) );
 			$type = 'event';
+		} elseif ( strpos( $target, 'wp-cron:' ) === 0 ) {
+			$ok = self::quarantine_cron_hook( substr( $target, 8 ) );
+			$type = 'wp-cron';
 		} elseif ( strpos( $target, 'postmeta:' ) === 0 ) {
 			$ok = self::quarantine_postmeta_key( substr( $target, 9 ) );
 			$type = 'postmeta';
@@ -397,6 +400,67 @@ class Malroot_Quarantine {
 		return true;
 	}
 
+	/**
+	 * Unschedule a WP-Cron hook.
+	 *
+	 * Distinct from quarantine_event(), which drops a MySQL EVENT. Malware far
+	 * more commonly persists through WP-Cron: the backdoor found on
+	 * cityagecare.com registered a daily `bbp_license_sync` job that recreated
+	 * its administrator account. Deleting the account and the files without
+	 * clearing this job means the account simply comes back the next day, which
+	 * is why "we cleaned it and it returned" is such a common experience.
+	 *
+	 * The full schedule is backed up first, so it can be reinstated.
+	 *
+	 * @param string $hook Cron hook name.
+	 * @return true|WP_Error
+	 */
+	private static function quarantine_cron_hook( $hook ) {
+		$hook = trim( (string) $hook );
+		if ( '' === $hook ) {
+			return new WP_Error( 'no_hook', __( 'No cron hook given.', 'malroot-security' ) );
+		}
+
+		// Never let this be turned against our own scheduled scan.
+		if ( 0 === strpos( $hook, 'malroot_' ) ) {
+			return new WP_Error( 'refused', __( 'Refusing to unschedule Malroot\'s own maintenance job.', 'malroot-security' ) );
+		}
+
+		$crons   = (array) _get_cron_array();
+		$backup  = [];
+		$removed = 0;
+
+		foreach ( $crons as $timestamp => $groups ) {
+			if ( ! is_array( $groups ) || ! isset( $groups[ $hook ] ) ) {
+				continue;
+			}
+			foreach ( (array) $groups[ $hook ] as $key => $event ) {
+				$backup[] = [
+					'timestamp' => $timestamp,
+					'schedule'  => $event['schedule'] ?? false,
+					'interval'  => $event['interval'] ?? null,
+					'args'      => $event['args'] ?? [],
+				];
+				$removed++;
+			}
+		}
+
+		if ( 0 === $removed ) {
+			return new WP_Error( 'no_hook', __( 'That scheduled job no longer exists.', 'malroot-security' ) );
+		}
+
+		self::record_log( 'wp-cron', $hook, [ 'events' => $backup ] );
+
+		// Remove every occurrence, whatever arguments it was scheduled with.
+		foreach ( $backup as $event ) {
+			wp_unschedule_event( $event['timestamp'], $hook, (array) $event['args'] );
+		}
+		// Belt and braces: clears any occurrence the loop above missed.
+		wp_clear_scheduled_hook( $hook );
+
+		return true;
+	}
+
 	private static function quarantine_event( $event_name ) {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
@@ -419,6 +483,24 @@ class Malroot_Quarantine {
 	/* ---------------------------------------------------------------- */
 	/*  Backup log + restore                                            */
 	/* ---------------------------------------------------------------- */
+
+	/**
+	 * Back up arbitrary text before it is rewritten in place.
+	 *
+	 * Used when a file must be edited rather than removed — stripping cloaking
+	 * rules out of .htaccess, for example, where deleting the whole file would
+	 * break permalinks. Restores through the normal 'file' path.
+	 *
+	 * @param string $rel_path Path relative to ABSPATH, for the record.
+	 * @param string $contents Original contents.
+	 */
+	public static function backup_text( $rel_path, $contents ) {
+		self::record_log( 'file', ltrim( (string) $rel_path, '/' ), [
+			'content_b64' => base64_encode( (string) $contents ),
+			'size'        => strlen( (string) $contents ),
+			'method'      => 'edit-in-place-backup',
+		] );
+	}
 
 	private static function record_log( $type, $target, array $payload ) {
 		global $wpdb;
@@ -507,6 +589,17 @@ class Malroot_Quarantine {
 						'meta_key'   => $row->target, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- INSERT column name, not a WP_Query meta lookup.
 						'meta_value' => $r['meta_value'], // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- INSERT column name, not a WP_Query meta lookup.
 					], [ '%d', '%s', '%s' ] );
+				}
+				break;
+
+			case 'wp-cron':
+				foreach ( (array) ( $payload['events'] ?? [] ) as $event ) {
+					$args = (array) ( $event['args'] ?? [] );
+					if ( ! empty( $event['schedule'] ) ) {
+						wp_schedule_event( (int) $event['timestamp'], $event['schedule'], $row->target, $args );
+					} else {
+						wp_schedule_single_event( (int) $event['timestamp'], $row->target, $args );
+					}
 				}
 				break;
 
