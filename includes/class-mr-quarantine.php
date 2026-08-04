@@ -213,6 +213,50 @@ class Malroot_Quarantine {
 			return new WP_Error( 'no_file', __( 'File no longer exists.', 'malroot-security' ) );
 		}
 
+		// Large files are recorded, not copied into the database.
+		//
+		// Backups are stored base64-encoded in a LONGTEXT column, which adds
+		// about a third to the size. Cleaning the kit from cityagecare.com put
+		// 58 MB into this table and took a 17 MB database export to 76 MB — a
+		// single 16 MB reverse-shell toolkit became 21 MB of base64, and the
+		// duplicate below made it 43 MB. That bloats every future backup, slows
+		// exports, and risks max_allowed_packet failures on re-import.
+		//
+		// Nobody wants to restore a 16 MB attack toolkit, so above the threshold
+		// the file's identity is preserved (hash, size, permissions) and the
+		// bytes are not. Anything genuinely needed can be recovered from the
+		// operator's own site backup using the hash to confirm it is the same
+		// file.
+		$size = (int) @filesize( $abs );
+		if ( $size > self::max_backup_bytes() ) {
+			self::record_log( 'file', $rel_path, [
+				'content_b64' => '',
+				'size'        => $size,
+				'sha256'      => @hash_file( 'sha256', $abs ),
+				'perms'       => @fileperms( $abs ) & 0777,
+				'method'      => 'metadata-only+delete',
+				'note'        => sprintf(
+					'File was %s, above the %s backup limit. Identity recorded; contents not stored.',
+					size_format( $size ),
+					size_format( self::max_backup_bytes() )
+				),
+			] );
+
+			wp_delete_file( $abs );
+
+			if ( file_exists( $abs ) ) {
+				return new WP_Error(
+					'move_failed',
+					sprintf(
+						/* translators: %s: file path */
+						__( 'Recorded %s but could not delete it automatically (it is owned by a different system user). Use your hosting file manager or FTP to delete it.', 'malroot-security' ),
+						esc_html( $rel_path )
+					)
+				);
+			}
+			return true;
+		}
+
 		// Back the file up into the database (base64), then delete it from disk.
 		//
 		// We deliberately do NOT move or copy the file into the uploads folder
@@ -502,15 +546,55 @@ class Malroot_Quarantine {
 		] );
 	}
 
+	/**
+	 * Largest file whose contents are copied into the database.
+	 * Filterable so an operator with different priorities can change it.
+	 */
+	public static function max_backup_bytes() {
+		return (int) apply_filters( 'malroot_max_backup_bytes', 2 * 1024 * 1024 );
+	}
+
 	private static function record_log( $type, $target, array $payload ) {
 		global $wpdb;
+		$json = wp_json_encode( $payload );
+
+		// Do not store the same backup twice.
+		//
+		// Running a cleanup a second time previously appended another full copy
+		// of every file. On cityagecare.com that stored a 21 MB base64 blob
+		// twice, accounting for 43 MB of a 58 MB table. A repeated removal of
+		// identical content adds nothing recoverable, so refresh the timestamp on
+		// the existing record instead.
+		$fingerprint = hash( 'sha256', $type . '|' . $target . '|' . $json );
+		$table       = self::table();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
+		$existing = $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$table} WHERE item_type = %s AND target = %s AND SHA2(CONCAT(item_type,'|',target,'|',payload_json),256) = %s LIMIT 1",
+			$type,
+			$target,
+			$fingerprint
+		) );
+
+		if ( $existing ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->update(
+				$table,
+				[ 'status' => self::STATUS_QUARANT, 'created_at' => current_time( 'mysql' ) ],
+				[ 'id' => (int) $existing ],
+				[ '%s', '%s' ],
+				[ '%d' ]
+			);
+			return;
+		}
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert(
 			self::table(),
 			[
 				'item_type'    => $type,
 				'target'       => $target,
-				'payload_json' => wp_json_encode( $payload ),
+				'payload_json' => $json,
 				'status'       => self::STATUS_QUARANT,
 				'created_at'   => current_time( 'mysql' ),
 			],
@@ -538,8 +622,23 @@ class Malroot_Quarantine {
 			case 'file':
 				$abs = ABSPATH . ltrim( $row->target, '/' );
 
+				// Metadata-only record: the file was too large to copy into the
+				// database. Refuse rather than writing an empty file over the
+				// path, which is what an empty content_b64 would otherwise do.
+				if ( isset( $payload['content_b64'] ) && '' === $payload['content_b64'] ) {
+					return new WP_Error(
+						'metadata_only',
+						sprintf(
+							/* translators: 1: file size, 2: sha256 hash */
+							__( 'This file was %1$s, too large to keep a copy of, so only its identity was recorded (SHA-256 %2$s). Restore it from your own site backup if you need it.', 'malroot-security' ),
+							isset( $payload['size'] ) ? size_format( (int) $payload['size'] ) : __( 'very large', 'malroot-security' ),
+							esc_html( substr( (string) ( $payload['sha256'] ?? '' ), 0, 16 ) )
+						)
+					);
+				}
+
 				// Current format: contents are stored (base64) in the DB.
-				if ( isset( $payload['content_b64'] ) ) {
+				if ( ! empty( $payload['content_b64'] ) ) {
 					$bytes = base64_decode( $payload['content_b64'] );
 					if ( $bytes === false ) {
 						return new WP_Error( 'missing', __( 'Quarantined backup is corrupt.', 'malroot-security' ) );
