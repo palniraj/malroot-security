@@ -613,6 +613,7 @@ class Malroot_Cleanup {
 			$fs = self::filesystem();
 			if ( $fs && $fs->put_contents( $htaccess, $new ) ) {
 				$done[] = [ 'item' => '.htaccess', 'result' => 'cloaking rules removed (original backed up)' ];
+				$done[] = [ 'item' => 'permalinks', 'result' => self::ensure_permalink_rules( $htaccess ) ];
 			} else {
 				$done[] = [ 'item' => '.htaccess', 'result' => 'backup saved but write failed — edit it by hand' ];
 			}
@@ -698,6 +699,93 @@ class Malroot_Cleanup {
 			$out[] = $line;
 		}
 		return implode( "\n", $out );
+	}
+
+	/**
+	 * Make sure .htaccess still routes requests to WordPress.
+	 *
+	 * Removing the cloaking rules is only half the job. The attacker on
+	 * cityagecare.com had replaced the whole file, so the "# BEGIN WordPress"
+	 * block was already gone — stripping the cloak left a file with
+	 * RewriteEngine On and nothing to route to index.php. Every page on the site
+	 * then returned a bare Apache 404 immediately after a "successful" cleanup,
+	 * which looks far worse than the infection did.
+	 *
+	 * WordPress writes this block itself, so let it: flush_rewrite_rules() with a
+	 * hard flush calls save_mod_rewrite_rules(), which uses the same marker-aware
+	 * writer core uses on the Permalinks screen.
+	 *
+	 * @param string $htaccess Absolute path.
+	 * @return string Human-readable outcome.
+	 */
+	private static function ensure_permalink_rules( $htaccess ) {
+		$body = is_readable( $htaccess ) ? (string) file_get_contents( $htaccess ) : '';
+
+		if ( false !== strpos( $body, '# BEGIN WordPress' ) ) {
+			return 'already present, left alone';
+		}
+		// A site using plain permalinks needs no rules at all.
+		if ( '' === (string) get_option( 'permalink_structure', '' ) ) {
+			return 'not needed (site uses plain permalinks)';
+		}
+
+		if ( ! function_exists( 'save_mod_rewrite_rules' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/misc.php';
+		}
+
+		global $wp_rewrite;
+		if ( ! $wp_rewrite ) {
+			return 'could not add automatically — open Settings > Permalinks and click Save';
+		}
+
+		// Preferred route: let WordPress write the block itself.
+		flush_rewrite_rules( true );
+
+		if ( self::has_wp_block( $htaccess ) ) {
+			return self::log_permalink_restore();
+		}
+
+		// Fallback: write the rules directly.
+		//
+		// save_mod_rewrite_rules() is gated behind got_mod_rewrite(), which
+		// depends on apache_get_modules() being available. That function does not
+		// exist under LiteSpeed or PHP-FPM, so on exactly the kind of hosting
+		// this site runs the gate can refuse even though rewriting works fine.
+		// The rules themselves come from $wp_rewrite, and insert_with_markers is
+		// the same marker-aware writer core uses, so this is not a shortcut —
+		// only the environment sniff is skipped.
+		if ( ! is_writable( $htaccess ) ) {
+			return 'could not write .htaccess — open Settings > Permalinks and click Save';
+		}
+		if ( ! function_exists( 'insert_with_markers' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/misc.php';
+		}
+
+		$rules = explode( "\n", $wp_rewrite->mod_rewrite_rules() );
+		$rules = array_filter( $rules, static function ( $line ) {
+			return '' !== trim( (string) $line );
+		} );
+		if ( ! $rules ) {
+			return 'could not add automatically — open Settings > Permalinks and click Save';
+		}
+
+		insert_with_markers( $htaccess, 'WordPress', array_values( $rules ) );
+
+		return self::has_wp_block( $htaccess )
+			? self::log_permalink_restore()
+			: 'rules still missing — open Settings > Permalinks and click Save';
+	}
+
+	private static function has_wp_block( $htaccess ) {
+		$body = is_readable( $htaccess ) ? (string) file_get_contents( $htaccess ) : '';
+		return false !== strpos( $body, '# BEGIN WordPress' );
+	}
+
+	private static function log_permalink_restore() {
+		if ( class_exists( 'Malroot_Logger' ) ) {
+			Malroot_Logger::info( 'Restored WordPress permalink rules that the attacker had removed' );
+		}
+		return 'WordPress rewrite rules were missing and have been restored';
 	}
 
 	/**
